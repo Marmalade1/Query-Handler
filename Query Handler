@@ -1,0 +1,48 @@
+-module(handler).
+-export([fetchTweet/1, count/0, sort/1, send/1, interval/1, fix_hashtag/1, fix_timestamp/1, print/0]).
+
+fetchTweet(ID)->
+{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+{ok, Fetched1} = riakc_pb_socket:get(Pid, <<"tweets">>, ID),
+P = riakc_obj:get_value(Fetched1).
+
+%% Fetch value from key
+fetch() -> ok.
+	%X = riakc_obj:get_value(Key).
+
+%% Implement map/reduce for counting tags 
+count() -> ok.
+
+%% Retrieve something in time interval
+interval(Dates) ->  ok. % fixa timestsmp
+%	riakc_pb_socket:get_index_range(Pid, OrderBucket, 
+%                                {binary_index, "TimeStamp"}, 
+%                                <<"Date 1">>, <<"Date 2">>).
+
+%% <<"text">>,<<Hashtags>>,<<"indices">>
+fix_hashtag([_, [Hashtags], _]) -> {ok, [Hashtags]};
+fix_hashtag([_, Hashtags, _]) -> {ok, integer_to_list(Hashtags)};
+fix_hashtag([]) -> [].
+
+%% Kolla upp unix time - 20140101 
+% [binary_to_list(X) || X <- [<<"a">>, <<"b">>, <<"c">>]]
+fix_timestamp(TimeStamp) -> 
+	case {<<"day, month, date, hour, timeZone, year">>} of
+		{<<"day, month, date, hour, timeZone, year">>} -> {{<<"year, month, day">>}, {<<"hour">>}};
+		{_} -> {}
+	end.
+		
+timestamp_fix() -> 
+	Year = string:substr(TimeStamp, 27, 4);
+	Month = string:substr(TimeStamp, 5, 3);
+	Day = string:substr(TimeStamp, 9, 2);
+	Stamp = {Year, Month, Day}.		
+
+sort(N) -> ok.
+
+print() -> io:format("Fetched data: ~p~n", []).
+
+send(N) -> ok.
+
+ %erl -pa /home/erlach/riak-erlang-client/ebin/ riak-erlang-client/deps/*/ebin
+
