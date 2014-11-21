@@ -2,7 +2,9 @@
 -export([fetch/0, sort/1, send/1, interval/1, fix_hashtag/1, fix_timestamp/1, print/0, mapreduce/2, maptags/3, redtags/2, go/0, store/0]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
-%% Reload nodes, sudo dev1/bin/riak start and do it for all 5
+%% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
+%% Add beam path file to all nodes, advance.config file.
+
 
 %% Fetch value from key
 fetch() -> ok.
