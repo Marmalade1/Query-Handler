@@ -1,44 +1,99 @@
 -module(handler).
--export([fetchTweet/1, count/0, sort/1, send/1, interval/1, fix_hashtag/1, fix_timestamp/1, print/0]).
+-export([fetch/0, sort/1, send/1, interval/1, fix_hashtag/1, fix_timestamp/1, print/0, mapreduce/2, maptags/3, redtags/2, go/0, store/0]).
 
-fetchTweet(ID)->
-{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
-{ok, Fetched1} = riakc_pb_socket:get(Pid, <<"tweets">>, ID),
-P = riakc_obj:get_value(Fetched1).
+%% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
+%% Reload nodes
 
 %% Fetch value from key
 fetch() -> ok.
-	%X = riakc_obj:get_value(Key).
+	%% {ok, Fetched} = riakc_pb_socket:get(Pid, <<"bucket">>, I).
+	%% {ok, Fetch} = riakc_obj:get_value(Fetched).
+store() -> 
+	%% I = list_to_binary(integer_to_list(ID))
+	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+
+	Obj1 = riakc_obj:new(<<"Test">>, <<"key1">>, {1, {2014}, ["mat", "hej"]}),
+	Obj2 = riakc_obj:new(<<"Test">>, <<"key2">>, {2, {2014}, ["ma", "hej"]}),
+	Obj3 = riakc_obj:new(<<"Test">>, <<"key3">>, {3, {2014}, ["mt", "hej"]}),
+
+  	riakc_pb_socket:put(Pid, Obj1),
+  	riakc_pb_socket:put(Pid, Obj2),
+  	riakc_pb_socket:put(Pid, Obj3).
+
+
+%% Start riak and mapreduce
+go() ->
+	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+%	Keys = [{<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}],
+	Keys = [{<<"Test">>, <<"key1">>}, {<<"Test">>, <<"key2">>}, {<<"Test">>, <<"key3">>}],
+	mapreduce(Pid, Keys).
+
 
 %% Implement map/reduce for counting tags 
-count() -> ok.
+mapreduce(Pid, Keys) -> 
+	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
+                         Pid,
+                         Keys,
+                         [{map, {modfun, handler, maptags}, none, false},
+                          {reduce, {modfun, handler, redtags}, none, true}]),
+	dict:to_list(Result).
+
+
+maptags(RiakObject, _, _) ->
+	%[binary_to_term(riak_object:get_value(RiakObject))].
+	{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)),
+	[dict:from_list([{I, 1} || I <- HashtagList])].
+
+
+redtags(Input, _) ->
+	[lists:foldl(
+		fun(Tag, Acc) ->
+			dict:merge(fun(_, Amount1, Amount2) ->
+				Amount1 + Amount2 end, Tag, Acc) end, dict:new(),
+			Input)].
+
 
 %% Retrieve something in time interval
+%% Spara tweets i iso format, kolla upp secondary indexes
 interval(Dates) ->  ok. % fixa timestsmp
 %	riakc_pb_socket:get_index_range(Pid, OrderBucket, 
 %                                {binary_index, "TimeStamp"}, 
 %                                <<"Date 1">>, <<"Date 2">>).
 
+
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
-%% [{<<"text">>,<<"Hashtags">>}, {<<"indices">>, []}
-fix_hashtag() -> fix_hashtag([]).
-fix_hashtag([{[{_, Tag}, _]}]) -> {Tag};
-fix_hashtag([]) -> [].
+%% [{[{<<"t">>,<<"hej">>}, {<<"i">>,""}]}, {[{<<"t">>,<<"hejda">>},{<<"i">>,""}]}]
+fix_hashtag([]) -> [];
+fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].	
+	
 
+%% <<"Mon Sep 20 05:31:30 +0000 2010">>
+fix_timestamp(TimeStamp) -> 
+	Year = string:substr(TimeStamp, 27, 4),
+	Year1 = list_to_integer(Year),
+	Month =	case string:substr(TimeStamp, 5, 3) of
+		"Jan" -> 1;
+		"Feb" -> 2;
+		"Mar" -> 3;
+		"Apr" -> 4;
+		"May" -> 5;
+		"Jun" -> 6;
+		"Jul" -> 7;
+		"Aug" -> 8;
+		"Sep" -> 9;
+		"Oct" -> 10;
+		"Nov" -> 11;
+		"Dec" -> 12
+	end,
+	Day = string:substr(TimeStamp, 9, 2),
+	Day1 = list_to_integer(Day),
+	Stamp = {Year1, Month, Day1}.	
 
-%% Kolla upp unix time - 20140101 
-% [binary_to_list(X) || X <- [<<"a">>, <<"b">>, <<"c">>]]
-fix_timestamp() -> 
-	Year = string:substr(TimeStamp, 27, 4);
-	Month = string:substr(TimeStamp, 5, 3);
-	Day = string:substr(TimeStamp, 9, 2);
-	Stamp = {Year, Month, Day}.		
 
 sort(N) -> ok.
 
+
 print() -> io:format("Fetched data: ~p~n", []).
 
+
 send(N) -> ok.
-
- %erl -pa /home/erlach/riak-erlang-client/ebin/ riak-erlang-client/deps/*/ebin
-
