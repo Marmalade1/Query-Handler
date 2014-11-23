@@ -68,7 +68,7 @@ timestampYMD() ->
 
 
 metaData() ->
-	dict:store(<<"timestamp">>, [{"timestamp_int", timestampYMD()}]).
+	dict:store(<<"timestamp">>, [{"timestamp_bin", timestampYMD()}]), dict:new().
 
 
 %% Retrieve something in time interval
