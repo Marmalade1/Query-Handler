@@ -1,0 +1,12 @@
+-module(meta).
+-export([create/0]).
+
+create() -> 
+	Larry = riakc_obj:new(
+		{<<"indexes">>}, <<"people">>),
+	<<"Larry">>, <<"My names is larry">>, <<"text/plain">>,
+	LarryMetaData = riakc_obj:get_update_metadata(Larry),
+	LarryIndexes = riakc_obj:set_secondary_index(
+		LarryMetaData, [{{binary_index, "timestamp"}, [<<"val">>]}, {{integer_index, "val2"}, 
+		[1001]}]),
+	LarryWithIndexes = riakc_obj:update_metadata(Larry, LarryIndexes).
