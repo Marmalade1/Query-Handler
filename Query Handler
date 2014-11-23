@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/0, sort/1, send/1, interval/1, fix_hashtag/1, fix_timestamp/1, print/0, mapreduce/2, maptags/3, redtags/2, go/0, store/0]).
+-export([fetch/0, interval/1, fix_hashtag/1, fix_timestamp/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, metaData/0]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 %% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
@@ -54,13 +54,35 @@ redtags(Input, _) ->
 				Amount1 + Amount2 end, Tag, Acc) end, dict:new(),
 			Input)].
 
+timestamp() ->
+	{{Year, Month, Day}, {Hour, Min, Sec}} = calendar:local_time(),
+    Format = "~4.10.0B-~2.10.0B-~2.10.0B ~2.10.0B:~2.10.0B:~2.10.0B",
+    IsoFormat = io_lib:format(Format, [Year, Month, Day, Hour, Min, Sec]),
+    list_to_binary(IsoFormat).
+
+timestampYMD() ->
+	{{Year, Month, Day}, _} = calendar:local_time(),
+    Format = "~4.10.0B-~2.10.0B-~2.10.0B",
+    IsoFormat = io_lib:format(Format, [Year, Month, Day]),
+    list_to_binary(IsoFormat).
+
+
+metaData() ->
+	dict:store(<<"timestamp">>, [{"timestamp_int", timestampYMD()}]).
+
 
 %% Retrieve something in time interval
 %% Spara tweets i iso format, kolla upp secondary indexes
 interval(Dates) ->  ok. % fixa timestsmp
-%	riakc_pb_socket:get_index_range(Pid, OrderBucket, 
+%	riakc_pb_socket:get_index_range(Pid, Bucket, 
 %                                {binary_index, "TimeStamp"}, 
-%                                <<"Date 1">>, <<"Date 2">>).
+%                                <<"2014-11-24">>, <<"2014-11-25">>).
+
+%% This performs exact match index query using binary
+retrieve_using_indexes() -> %% bucket type and bucket name
+	{ok, Results} = riakc_pb_socket:get_index(Pid, {<<"mytype">>, <<"mybucket">>}, 
+    {binary_index, "field2"}, <<"val1">> %% Can change to integer_index
+).
 
 
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
@@ -92,10 +114,9 @@ fix_timestamp(TimeStamp) ->
 	Stamp = {Year1, Month, Day1}.	
 
 
-sort(N) -> ok.
-
-
 print() -> io:format("Fetched data: ~p~n", []).
 
 
-send(N) -> ok.
+
+ %erl -pa /home/erlach/riak-erlang-client/ebin/ riak-erlang-client/deps/*/ebin
+
