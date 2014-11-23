@@ -1,0 +1,17 @@
+-module(timestamp).
+-export([timestamp/0, timestampYMD/0]).
+
+%% cd("C:/Users/Mackan/Desktop/SEM/Erlang").
+
+
+timestamp() ->
+	{{Year, Month, Day}, {Hour, Min, Sec}} = calendar:local_time(),
+    Format = "~4.10.0B-~2.10.0B-~2.10.0B ~2.10.0B:~2.10.0B:~2.10.0B",
+    IsoFormat = io_lib:format(Format, [Year, Month, Day, Hour, Min, Sec]),
+    list_to_binary(IsoFormat).
+
+timestampYMD() ->
+	{{Year, Month, Day}, _} = calendar:local_time(),
+    Format = "~4.10.0B-~2.10.0B-~2.10.0B",
+    IsoFormat = io_lib:format(Format, [Year, Month, Day]),
+    list_to_binary(IsoFormat).
