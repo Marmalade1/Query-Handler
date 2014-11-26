@@ -1,9 +1,14 @@
 -module(handler).
--export([fetch/0, interval/1, fix_hashtag/1, fix_timestamp/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, metaData/0]).
+-export([fetch/0, interval/1, fix_hashtag/1, fix_timestamp/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, metaData/0, save_tweet/2]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
+
 %% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
 %% Add beam path file to all nodes, advance.config file.
+
+%% To change secondary index config:
+%% http://docs.basho.com/riak/latest/ops/advanced/configs/secondary-index/
+
 
 
 %% Fetch value from key
@@ -54,12 +59,14 @@ redtags(Input, _) ->
 				Amount1 + Amount2 end, Tag, Acc) end, dict:new(),
 			Input)].
 
+%% Timestamp in year-month-day, hour:min:sec format
 timestamp() ->
 	{{Year, Month, Day}, {Hour, Min, Sec}} = calendar:local_time(),
     Format = "~4.10.0B-~2.10.0B-~2.10.0B ~2.10.0B:~2.10.0B:~2.10.0B",
     IsoFormat = io_lib:format(Format, [Year, Month, Day, Hour, Min, Sec]),
     list_to_binary(IsoFormat).
 
+%% Timetamp in year-month-day format
 timestampYMD() ->
 	{{Year, Month, Day}, _} = calendar:local_time(),
     Format = "~4.10.0B-~2.10.0B-~2.10.0B",
@@ -73,16 +80,16 @@ metaData() ->
 
 %% Retrieve something in time interval
 %% Spara tweets i iso format, kolla upp secondary indexes
-interval(Dates) ->  ok. % fixa timestsmp
-%	riakc_pb_socket:get_index_range(Pid, Bucket, 
-%                                {binary_index, "TimeStamp"}, 
-%                                <<"2014-11-24">>, <<"2014-11-25">>).
+%% Bucket kan vara i format, buckettype, bucket som retrieve_using_indexes
+interval(Dates) -> 
+	riakc_pb_socket:get_index_range(Pid, Bucket, 
+                                {binary_index, "TimeStamp"}, 
+                                <<"2014-11-24">>, <<"2014-11-25">>).
 
 %% This performs exact match index query using binary
 retrieve_using_indexes() -> %% bucket type and bucket name
-	{ok, Results} = riakc_pb_socket:get_index(Pid, {<<"mytype">>, <<"mybucket">>}, 
-    {binary_index, "field2"}, <<"val1">> %% Can change to integer_index
-).
+	riakc_pb_socket:get_index(Pid, {<<"mytype">>, <<"mybucket">>}, 
+		{binary_index, "TimeStamp"}, <<"2014-11-25">>). %% Can change to integer_index
 
 
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
@@ -116,6 +123,20 @@ fix_timestamp(TimeStamp) ->
 
 print() -> io:format("Fetched data: ~p~n", []).
 
+
+%% Save tweet with updated secondary index
+%% Not yet tested
+save_tweet(R, {parsed_tweet, _L, B, {id, I}}) ->
+
+	Obj = riakc_obj:new(<<"tweets">>, list_to_binary(integer_to_list(I)), B),
+	Timestamp = timestamp(),
+	MetaData = riakc_obj:get_update_metadata(Obj),
+	ObjSecondary = riakc_obj:set_secondary_index(MetaData, 
+		[{{binary_index, "Timestamp"}, [Timestamp]}]),
+	NewObj = riakc_obj:update_metadata(Obj, ObjSecondary),
+	riakc_pb_socket:put(R, NewObj);
+
+save_tweet(_, _) -> ok.
 
 
  %erl -pa /home/erlach/riak-erlang-client/ebin/ riak-erlang-client/deps/*/ebin
