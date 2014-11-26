@@ -1,6 +1,7 @@
 -module(meta).
--export([create/0]).
+-export([create/0, save_tweet/2]).
 
+%% Secondary index example
 create() -> 
 	Larry = riakc_obj:new(
 		{<<"indexes">>}, <<"people">>),
@@ -10,3 +11,18 @@ create() ->
 		LarryMetaData, [{{binary_index, "timestamp"}, [<<"val">>]}, {{integer_index, "val2"}, 
 		[1001]}]),
 	LarryWithIndexes = riakc_obj:update_metadata(Larry, LarryIndexes).
+
+
+%% Save tweet with updated secondary index
+%% Not yet tested
+save_tweet(R, {parsed_tweet, _L, B, {id, I}}) ->
+
+	Obj = riakc_obj:new(<<"tweets">>, list_to_binary(integer_to_list(I)), B),
+	Timestamp = timestamp(),
+	MetaData = riakc_obj:get_update_metadata(Obj),
+	ObjSecondary = riakc_obj:set_secondary_index(MetaData, 
+		[{{binary_index, "Timestamp"}, [Timestamp]}]),
+	NewObj = riakc_obj:update_metadata(Obj, ObjSecondary),
+	riakc_pb_socket:put(R, NewObj);
+
+save_tweet(_, _) -> ok.
