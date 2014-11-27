@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/0, interval/1, fix_hashtag/1, fix_timestamp/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, metaData/0, save_tweet/2]).
+-export([fetch/1, interval/1, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, save_tweet/2, retrieve_using_indexes/1]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 
@@ -10,22 +10,34 @@
 %% http://docs.basho.com/riak/latest/ops/advanced/configs/secondary-index/
 
 
-
-%% Fetch value from key
-fetch() -> ok.
-	%% {ok, Fetched} = riakc_pb_socket:get(Pid, <<"bucket">>, I).
-	%% {ok, Fetch} = riakc_obj:get_value(Fetched).
 store() -> 
 	%% I = list_to_binary(integer_to_list(ID))
+	Timestamp = timestampYMD(),
 	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
 
-	Obj1 = riakc_obj:new(<<"Test">>, <<"key1">>, {1, {2014}, ["mat", "hej"]}),
-	Obj2 = riakc_obj:new(<<"Test">>, <<"key2">>, {2, {2014}, ["ma", "hej"]}),
-	Obj3 = riakc_obj:new(<<"Test">>, <<"key3">>, {3, {2014}, ["mt", "hej"]}),
+	Obj1 = riakc_obj:new(<<"Test">>, <<"key1">>, {1, {}, ["beer", "bacon"]}),
+	Obj2 = riakc_obj:new(<<"Test">>, <<"key2">>, {2, {}, ["kebab", "pizza"]}),
+	Obj3 = riakc_obj:new(<<"Test">>, <<"key3">>, {3, {}, ["bacon", "hamburger"]}),
 
-  	riakc_pb_socket:put(Pid, Obj1),
-  	riakc_pb_socket:put(Pid, Obj2),
-  	riakc_pb_socket:put(Pid, Obj3).
+	MetaData1 = riakc_obj:get_update_metadata(Obj1),
+	MetaData2 = riakc_obj:get_update_metadata(Obj2),
+	MetaData3 = riakc_obj:get_update_metadata(Obj3),
+
+	Obj1Secondary = riakc_obj:set_secondary_index(MetaData1, 
+		[{{binary_index, "Timestamp"}, [Timestamp]}]),
+	Obj2Secondary = riakc_obj:set_secondary_index(MetaData2, 
+		[{{binary_index, "Timestamp"}, [Timestamp]}]),
+	Obj3Secondary = riakc_obj:set_secondary_index(MetaData3, 
+		[{{binary_index, "Timestamp"}, [<<"2014-11-27">>]}]),
+
+	Obj1Upd = riakc_obj:update_metadata(Obj1, Obj1Secondary),
+	Obj2Upd = riakc_obj:update_metadata(Obj2, Obj2Secondary),
+	Obj3Upd = riakc_obj:update_metadata(Obj3, Obj3Secondary),
+
+  	riakc_pb_socket:put(Pid, Obj1Upd),
+  	riakc_pb_socket:put(Pid, Obj2Upd),
+  	riakc_pb_socket:put(Pid, Obj3Upd),
+  	io:format("Stored, ~p~n", [Obj2Upd]).
 
 
 %% Start riak and mapreduce
@@ -34,6 +46,16 @@ go() ->
 %	Keys = [{<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}],
 	Keys = [{<<"Test">>, <<"key1">>}, {<<"Test">>, <<"key2">>}, {<<"Test">>, <<"key3">>}],
 	mapreduce(Pid, Keys).
+	%interval(Pid).
+	%fetch(Pid).
+	%retrieve_using_indexes(Pid).
+
+
+%% Fetch value from key
+fetch(Pid) -> 
+	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Test">>, <<"key2">>),
+	{ok, Fetch} = binary_to_term(riakc_obj:get_value(Fetched)).
+	%%{ok, Fetch} = riakc_obj:get_value(Fetched).
 
 
 %% Implement map/reduce for counting tags 
@@ -59,12 +81,14 @@ redtags(Input, _) ->
 				Amount1 + Amount2 end, Tag, Acc) end, dict:new(),
 			Input)].
 
+
 %% Timestamp in year-month-day, hour:min:sec format
 timestamp() ->
 	{{Year, Month, Day}, {Hour, Min, Sec}} = calendar:local_time(),
     Format = "~4.10.0B-~2.10.0B-~2.10.0B ~2.10.0B:~2.10.0B:~2.10.0B",
     IsoFormat = io_lib:format(Format, [Year, Month, Day, Hour, Min, Sec]),
     list_to_binary(IsoFormat).
+
 
 %% Timetamp in year-month-day format
 timestampYMD() ->
@@ -74,22 +98,20 @@ timestampYMD() ->
     list_to_binary(IsoFormat).
 
 
-metaData() ->
-	dict:store(<<"timestamp">>, [{"timestamp_bin", timestampYMD()}]), dict:new().
-
-
 %% Retrieve something in time interval
 %% Spara tweets i iso format, kolla upp secondary indexes
 %% Bucket kan vara i format, buckettype, bucket som retrieve_using_indexes
-interval(Dates) -> 
-	riakc_pb_socket:get_index_range(Pid, Bucket, 
+interval(Pid) -> 
+	riakc_pb_socket:get_index_range(Pid, <<"test">>, 
                                 {binary_index, "TimeStamp"}, 
-                                <<"2014-11-24">>, <<"2014-11-25">>).
+                                <<"2014-11-26">>, <<"2014-11-26">>).
 
 %% This performs exact match index query using binary
-retrieve_using_indexes() -> %% bucket type and bucket name
+%% Can change to integer_index
+retrieve_using_indexes(Pid) -> %% bucket type and bucket name
 	riakc_pb_socket:get_index(Pid, {<<"mytype">>, <<"mybucket">>}, 
-		{binary_index, "TimeStamp"}, <<"2014-11-25">>). %% Can change to integer_index
+		{binary_index, "TimeStamp"}, <<"2014-11-25">>). 
+
 
 
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
@@ -98,34 +120,8 @@ fix_hashtag([]) -> [];
 fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].	
 	
 
-%% <<"Mon Sep 20 05:31:30 +0000 2010">>
-fix_timestamp(TimeStamp) -> 
-	Year = string:substr(TimeStamp, 27, 4),
-	Year1 = list_to_integer(Year),
-	Month =	case string:substr(TimeStamp, 5, 3) of
-		"Jan" -> 1;
-		"Feb" -> 2;
-		"Mar" -> 3;
-		"Apr" -> 4;
-		"May" -> 5;
-		"Jun" -> 6;
-		"Jul" -> 7;
-		"Aug" -> 8;
-		"Sep" -> 9;
-		"Oct" -> 10;
-		"Nov" -> 11;
-		"Dec" -> 12
-	end,
-	Day = string:substr(TimeStamp, 9, 2),
-	Day1 = list_to_integer(Day),
-	Stamp = {Year1, Month, Day1}.	
-
-
-print() -> io:format("Fetched data: ~p~n", []).
-
-
 %% Save tweet with updated secondary index
-%% Not yet tested
+%% Not yet tested, but seems to work while using it with dummy data
 save_tweet(R, {parsed_tweet, _L, B, {id, I}}) ->
 
 	Obj = riakc_obj:new(<<"tweets">>, list_to_binary(integer_to_list(I)), B),
