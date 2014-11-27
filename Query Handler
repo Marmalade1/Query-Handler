@@ -12,12 +12,13 @@
 
 store() -> 
 	%% I = list_to_binary(integer_to_list(ID))
+	%% "127.0.0.1", 10017, "129.16.155.22", 8087
 	Timestamp = timestampYMD(),
-	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087),
 
-	Obj1 = riakc_obj:new(<<"Test">>, <<"key1">>, {1, {}, ["beer", "bacon"]}),
-	Obj2 = riakc_obj:new(<<"Test">>, <<"key2">>, {2, {}, ["kebab", "pizza"]}),
-	Obj3 = riakc_obj:new(<<"Test">>, <<"key3">>, {3, {}, ["bacon", "hamburger"]}),
+	Obj1 = riakc_obj:new(<<"Markus">>, <<"key1">>, {1, {}, ["beer", "bacon"]}),
+	Obj2 = riakc_obj:new(<<"Markus">>, <<"key2">>, {2, {}, ["kebab", "pizza"]}),
+	Obj3 = riakc_obj:new(<<"Markus">>, <<"key3">>, {3, {}, ["bacon", "hamburger"]}),
 
 	MetaData1 = riakc_obj:get_update_metadata(Obj1),
 	MetaData2 = riakc_obj:get_update_metadata(Obj2),
@@ -28,7 +29,7 @@ store() ->
 	Obj2Secondary = riakc_obj:set_secondary_index(MetaData2, 
 		[{{binary_index, "Timestamp"}, [Timestamp]}]),
 	Obj3Secondary = riakc_obj:set_secondary_index(MetaData3, 
-		[{{binary_index, "Timestamp"}, [<<"2014-11-27">>]}]),
+		[{{binary_index, "Timestamp"}, [<<"2014-11-26">>]}]),
 
 	Obj1Upd = riakc_obj:update_metadata(Obj1, Obj1Secondary),
 	Obj2Upd = riakc_obj:update_metadata(Obj2, Obj2Secondary),
@@ -36,24 +37,27 @@ store() ->
 
   	riakc_pb_socket:put(Pid, Obj1Upd),
   	riakc_pb_socket:put(Pid, Obj2Upd),
-  	riakc_pb_socket:put(Pid, Obj3Upd),
-  	io:format("Stored, ~p~n", [Obj2Upd]).
+  	riakc_pb_socket:put(Pid, Obj3Upd).
+  	%io:format("Stored, ~p~n", [Obj2Upd]).
 
 
 %% Start riak and mapreduce
-go() ->
-	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+%% "127.0.0.1", 10017, "129.16.155.22", 8087
+go() -> 
+	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 %	Keys = [{<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}],
-	Keys = [{<<"Test">>, <<"key1">>}, {<<"Test">>, <<"key2">>}, {<<"Test">>, <<"key3">>}],
+	Keys = [{<<"Markus">>, <<"key1">>}, {<<"Markus">>, <<"key2">>}, {<<"Markus">>, <<"key3">>}],
+	{_, {_, Range, _, _}} = interval(Pid),
+	Keys1 = interval_keys(Range),
+	io:format("Keys: ~p~n", [Keys1]),
 	mapreduce(Pid, Keys).
-	%interval(Pid).
 	%fetch(Pid).
 	%retrieve_using_indexes(Pid).
 
 
 %% Fetch value from key
 fetch(Pid) -> 
-	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Test">>, <<"key2">>),
+	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Markus">>, <<"key2">>),
 	{ok, Fetch} = binary_to_term(riakc_obj:get_value(Fetched)).
 	%%{ok, Fetch} = riakc_obj:get_value(Fetched).
 
@@ -102,15 +106,19 @@ timestampYMD() ->
 %% Spara tweets i iso format, kolla upp secondary indexes
 %% Bucket kan vara i format, buckettype, bucket som retrieve_using_indexes
 interval(Pid) -> 
-	riakc_pb_socket:get_index_range(Pid, <<"test">>, 
-                                {binary_index, "TimeStamp"}, 
-                                <<"2014-11-26">>, <<"2014-11-26">>).
+	riakc_pb_socket:get_index_range(Pid, <<"Markus">>, 
+                                {binary_index, "Timestamp"}, 
+                                <<"2014-11-27">>, <<"2014-11-27">>).
+
+interval_keys(Range) ->
+	[{<<"Markus">>, Keys} || Keys <- Range].
+
 
 %% This performs exact match index query using binary
 %% Can change to integer_index
 retrieve_using_indexes(Pid) -> %% bucket type and bucket name
-	riakc_pb_socket:get_index(Pid, {<<"mytype">>, <<"mybucket">>}, 
-		{binary_index, "TimeStamp"}, <<"2014-11-25">>). 
+	riakc_pb_socket:get_index(Pid, <<"Markus">>,
+		{binary_index, "TimeStamp"}, <<"2014-11-27">>). 
 
 
 
