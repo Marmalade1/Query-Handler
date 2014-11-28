@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/1, interval/1, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, save_tweet/2, retrieve_using_indexes/1]).
+-export([fetch/0, interval/2, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, save_tweet/2, retrieve_using_indexes/2, local_go/0]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 
@@ -43,23 +43,36 @@ store() ->
 
 %% Start riak and mapreduce
 %% "127.0.0.1", 10017, "129.16.155.22", 8087
+%% Keys = [{Bucket, Key}, {Bucket, Key}] i binär form.
+%% Lägg till datum i iso format, Date = 2014-11-28 och gör binär.
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-%	Keys = [{<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}, {<<"bucket">>, <<"key">>}],
-	Keys = [{<<"Markus">>, <<"key1">>}, {<<"Markus">>, <<"key2">>}, {<<"Markus">>, <<"key3">>}],
-	{_, {_, Range, _, _}} = interval(Pid),
-	Keys1 = interval_keys(Range),
-	io:format("Keys: ~p~n", [Keys1]),
+	Bucket = <<"Markus_Sec">>,
+ 	%Keys1 = [{Bucket, <<"key1">>}, {Bucket, <<"key2">>}, {Bucket, <<"key3">>}],
+	{_, {_, Range, _, _}} = interval(Pid, Bucket),
+	Keys = interval_keys(Range, Bucket),
 	mapreduce(Pid, Keys).
 	%fetch(Pid).
 	%retrieve_using_indexes(Pid).
 
 
+%% {538257293054181376,{},["MTVStars"]}
+local_go() ->
+	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+	Bucket = <<"Markus_Sec">>,
+	{_, {_, Range, _, _}} = interval(Pid, Bucket),
+	Keys1 = [{Bucket, <<"538257293088161795">>}, {Bucket, <<"538257288885436417">>}],
+	Keys = interval_keys(Range, Bucket),
+	%fetch().
+	mapreduce(Pid, Keys).
+
+
 %% Fetch value from key
-fetch(Pid) -> 
-	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Markus">>, <<"key2">>),
-	{ok, Fetch} = binary_to_term(riakc_obj:get_value(Fetched)).
-	%%{ok, Fetch} = riakc_obj:get_value(Fetched).
+fetch() -> 
+	{ok , Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
+	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Markus_Sec">>, <<"538257293088161795">>),
+	Value = riakc_obj:get_value(Fetched),
+	{ok, binary_to_term(Value)}.
 
 
 %% Implement map/reduce for counting tags 
@@ -105,19 +118,19 @@ timestampYMD() ->
 %% Retrieve something in time interval
 %% Spara tweets i iso format, kolla upp secondary indexes
 %% Bucket kan vara i format, buckettype, bucket som retrieve_using_indexes
-interval(Pid) -> 
-	riakc_pb_socket:get_index_range(Pid, <<"Markus">>, 
+interval(Pid, Bucket) -> 
+	riakc_pb_socket:get_index_range(Pid, Bucket, 
                                 {binary_index, "Timestamp"}, 
-                                <<"2014-11-27">>, <<"2014-11-27">>).
+                                <<"2014-11-27">>, <<"2014-11-28">>).
 
-interval_keys(Range) ->
-	[{<<"Markus">>, Keys} || Keys <- Range].
+interval_keys(Range, Bucket) ->
+	[{Bucket, Keys} || Keys <- Range].
 
 
 %% This performs exact match index query using binary
 %% Can change to integer_index
-retrieve_using_indexes(Pid) -> %% bucket type and bucket name
-	riakc_pb_socket:get_index(Pid, <<"Markus">>,
+retrieve_using_indexes(Pid, Bucket) -> %% bucket type and bucket name
+	riakc_pb_socket:get_index(Pid, Bucket,
 		{binary_index, "TimeStamp"}, <<"2014-11-27">>). 
 
 
@@ -141,7 +154,4 @@ save_tweet(R, {parsed_tweet, _L, B, {id, I}}) ->
 	riakc_pb_socket:put(R, NewObj);
 
 save_tweet(_, _) -> ok.
-
-
- %erl -pa /home/erlach/riak-erlang-client/ebin/ riak-erlang-client/deps/*/ebin
 
