@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/0, interval/2, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, retrieve_using_indexes/2, local_go/0]).
+-export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, mapreduceProfanity/1, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, retrieve_using_indexes/2, local_go/0]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 
@@ -48,35 +48,42 @@ store() ->
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 	Bucket = <<"Final_Sprint">>,
+	%Key = <<"">>,
+	TimestampYMD = timestampYMD(),
+	Timestamp_7_days_ago = timestamp_7_days_ago(),
  	%Keys1 = [{Bucket, <<"key1">>}, {Bucket, <<"key2">>}, {Bucket, <<"key3">>}],
-	{_, {_, Range, _, _}} = interval(Pid, Bucket),
+	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
 	Keys = interval_keys(Range, Bucket),
 	%KeysPro = excludeProfanity(Nagot, Bucket)
 	Result = mapreduce(Pid, Keys),
-	%ResultPro = mapreduceProfanity(Pid, KeysPro),
+	%ResultPro = mapreduceProfanity(Pid),
 	sortList(Result).
-
+	%sortList(ResultPro).
+	
 
 %% {538257293054181376,{},["MTVStars"]}
 local_go() ->
 	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
 	Bucket = <<"Markus_Sec">>,
-	{_, {_, Range, _, _}} = interval(Pid, Bucket),
-	Keys1 = [{Bucket, <<"538257293088161795">>}, {Bucket, <<"538257288885436417">>}],
+	%Key = <<"">>,
+	TimestampYMD = timestampYMD(),
+	Timestamp_7_days_ago = timestamp_7_days_ago(),
+	Timestamp_30_days_ago = timestamp_30_days_ago(),
+	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
+	%Keys1 = [{Bucket, <<"538257293088161795">>}, {Bucket, <<"538257288885436417">>}],
 	Keys = interval_keys(Range, Bucket),
-	%fetch().
+	%fetch(Pid, Bucket, Key).
 	mapreduce(Pid, Keys).
 
 
 %% Fetch value from key
-fetch() -> 
-	{ok , Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
-	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Markus_Sec">>, <<"538257293088161795">>),
+fetch(Pid, Bucket, Key) -> 
+	{ok, Fetched} = riakc_pb_socket:get(Pid, Bucket, Key),
 	Value = riakc_obj:get_value(Fetched),
 	{ok, binary_to_term(Value)}.
 
 
-%% Implement map/reduce for counting tags 
+%% Mapreduce for counting tags.
 mapreduce(Pid, Keys) -> 
 	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
                          Pid,
@@ -85,13 +92,15 @@ mapreduce(Pid, Keys) ->
                           {reduce, {modfun, handler, redtags}, none, true}]),
 	dict:to_list(Result).
 
-%mapreduceProfanity(Pid, KeysPro) -> 
-%	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
-%                         Pid,
-%                         Keys,
-%                         [{map, {modfun, handler, maptags}, true, false},
-%                          {reduce, {modfun, handler, redtags}, none, true}]),
-%	dict:to_list(Result).
+
+%% Extra mapreduce to remove profanity.
+mapreduceProfanity(Pid) -> %Keys
+	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
+                         Pid,
+                         {<<"Final_Sprint">>, [[<<"matches">>, <<"porn">>]]},
+                         [{map, {modfun, handler, maptags}, true, false},
+                          {reduce, {modfun, handler, redtags}, none, true}]),
+	dict:to_list(Result).
 
 maptags(RiakObject, _, B) ->
 	%[binary_to_term(riak_object:get_value(RiakObject))].
@@ -99,8 +108,10 @@ maptags(RiakObject, _, B) ->
 	[dict:from_list([{I, 1} || I <- HashtagList])].
 
 %	case B of
-%		true ->
+%		true -> 
+%			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
 %		false ->
+%			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
 %	end.
 
 redtags(Input, _) ->
@@ -127,20 +138,38 @@ timestampYMD() ->
     list_to_binary(IsoFormat).
 
 
+%% Timestamp - 7 days.
+timestamp_7_days_ago() ->
+	{{Year, Month, Day}, _} = calendar:local_time(),
+	calendar:gregorian_days_to_date(calendar:date_to_gregorian_days({Year, Month, Day}) - 7),
+	Format = "~4.10.0B-~2.10.0B-~2.10.0B",
+	IsoFormat = io_lib:format(Format, [Year, Month, Day]),
+    list_to_binary(IsoFormat).
+
+
+%% Timestamp - 30 days.
+timestamp_30_days_ago() ->
+	{{Year, Month, Day}, _} = calendar:local_time(),
+	calendar:gregorian_days_to_date(calendar:date_to_gregorian_days({Year, Month, Day}) - 30),
+	Format = "~4.10.0B-~2.10.0B-~2.10.0B",
+	IsoFormat = io_lib:format(Format, [Year, Month, Day]),
+    list_to_binary(IsoFormat).
+
+
 %% Retrieve something in time interval
 %% Spara tweets i iso format, kolla upp secondary indexes
-interval(Pid, Bucket) -> 
-	riakc_pb_socket:get_index_range(Pid, Bucket, 
+interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago) -> 
+	{_, {_, Range, _, _}} =	riakc_pb_socket:get_index_range(Pid, Bucket, 
                                 {binary_index, "Timestamp"}, 
-                                <<"2014-11-27">>, <<"2014-12-01">>).
+                                Timestamp_7_days_ago, TimestampYMD), Range.
 
 interval_keys(Range, Bucket) ->
 	[{Bucket, Keys} || Keys <- Range].
 
 
 %% Fixa lista med otillåtna ord
-excludeProfanity(Nagot, Bucket) -> 
-	[{Bucket, [["matches", ProfanityList]]} || ProfanityList <- Fix_a_list].
+%excludeProfanity(Bucket) -> 
+%	[{Bucket, [[<<"matches">>, Exclude]]} || Exclude <- ProfanityList].
 
 
 %% This performs exact match index query using binary
@@ -159,8 +188,8 @@ fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].
 
 %% Sorting in top10
 sortList(Result)->
-	Sort = lists:reverse(lists:keysort(2,Result)),
-	Top10 = lists:sublist(Sort, 1, 10).
+	Sort = lists:reverse(lists:keysort(2,Result)), 
+	lists:sublist(Sort, 1, 10).
 
 
 %% Storing the result from mapreduce
@@ -178,3 +207,6 @@ store([H|T]) ->
 		io:format("Value is ~p~n",[V]),
 		store(T)
 	end.
+
+
+%% ProfanityList = [<<"porn">>, <<"sex">>, <<"pussy">>, <<"dick">>, <<"cum">>, <<"cumshot">>, <<"fuck">>, <<"fucking">>].
