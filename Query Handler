@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/0, interval/2, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, save_tweet/2, retrieve_using_indexes/2, local_go/0]).
+-export([fetch/0, interval/2, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, retrieve_using_indexes/2, local_go/0]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 
@@ -47,13 +47,14 @@ store() ->
 %% Lägg till datum i iso format, Date = 2014-11-28 och gör binär.
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-	Bucket = <<"Markus_Sec">>,
+	Bucket = <<"Final_Sprint">>,
  	%Keys1 = [{Bucket, <<"key1">>}, {Bucket, <<"key2">>}, {Bucket, <<"key3">>}],
 	{_, {_, Range, _, _}} = interval(Pid, Bucket),
 	Keys = interval_keys(Range, Bucket),
-	mapreduce(Pid, Keys).
-	%fetch(Pid).
-	%retrieve_using_indexes(Pid).
+	%KeysPro = excludeProfanity(Nagot, Bucket)
+	Result = mapreduce(Pid, Keys),
+	%ResultPro = mapreduceProfanity(Pid, KeysPro),
+	sortList(Result).
 
 
 %% {538257293054181376,{},["MTVStars"]}
@@ -80,16 +81,27 @@ mapreduce(Pid, Keys) ->
 	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
                          Pid,
                          Keys,
-                         [{map, {modfun, handler, maptags}, none, false},
+                         [{map, {modfun, handler, maptags}, false, false},
                           {reduce, {modfun, handler, redtags}, none, true}]),
 	dict:to_list(Result).
 
+%mapreduceProfanity(Pid, KeysPro) -> 
+%	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
+%                         Pid,
+%                         Keys,
+%                         [{map, {modfun, handler, maptags}, true, false},
+%                          {reduce, {modfun, handler, redtags}, none, true}]),
+%	dict:to_list(Result).
 
-maptags(RiakObject, _, _) ->
+maptags(RiakObject, _, B) ->
 	%[binary_to_term(riak_object:get_value(RiakObject))].
 	{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)),
 	[dict:from_list([{I, 1} || I <- HashtagList])].
 
+%	case B of
+%		true ->
+%		false ->
+%	end.
 
 redtags(Input, _) ->
 	[lists:foldl(
@@ -117,19 +129,23 @@ timestampYMD() ->
 
 %% Retrieve something in time interval
 %% Spara tweets i iso format, kolla upp secondary indexes
-%% Bucket kan vara i format, buckettype, bucket som retrieve_using_indexes
 interval(Pid, Bucket) -> 
 	riakc_pb_socket:get_index_range(Pid, Bucket, 
                                 {binary_index, "Timestamp"}, 
-                                <<"2014-11-27">>, <<"2014-11-28">>).
+                                <<"2014-11-27">>, <<"2014-12-01">>).
 
 interval_keys(Range, Bucket) ->
 	[{Bucket, Keys} || Keys <- Range].
 
 
+%% Fixa lista med otillåtna ord
+excludeProfanity(Nagot, Bucket) -> 
+	[{Bucket, [["matches", ProfanityList]]} || ProfanityList <- Fix_a_list].
+
+
 %% This performs exact match index query using binary
 %% Can change to integer_index
-retrieve_using_indexes(Pid, Bucket) -> %% bucket type and bucket name
+retrieve_using_indexes(Pid, Bucket) -> 
 	riakc_pb_socket:get_index(Pid, Bucket,
 		{binary_index, "TimeStamp"}, <<"2014-11-27">>). 
 
@@ -141,17 +157,24 @@ fix_hashtag([]) -> [];
 fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].	
 	
 
-%% Save tweet with updated secondary index
-%% Not yet tested, but seems to work while using it with dummy data
-save_tweet(R, {parsed_tweet, _L, B, {id, I}}) ->
+%% Sorting in top10
+sortList(Result)->
+	Sort = lists:reverse(lists:keysort(2,Result)),
+	Top10 = lists:sublist(Sort, 1, 10).
 
-	Obj = riakc_obj:new(<<"tweets">>, list_to_binary(integer_to_list(I)), B),
-	Timestamp = timestamp(),
-	MetaData = riakc_obj:get_update_metadata(Obj),
-	ObjSecondary = riakc_obj:set_secondary_index(MetaData, 
-		[{{binary_index, "Timestamp"}, [Timestamp]}]),
-	NewObj = riakc_obj:update_metadata(Obj, ObjSecondary),
-	riakc_pb_socket:put(R, NewObj);
 
-save_tweet(_, _) -> ok.
-
+%% Storing the result from mapreduce
+store([H|T]) ->
+	case T of
+		[]->io:format("done");
+		_->
+		{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
+		{K,V} = hd([H|T]),
+		Key = list_to_binary(K),
+		Value = list_to_binary(integer_to_list(V)),
+		Object = riakc_obj:new(<<"result">>,Key,Value),
+		riakc_pb_socket:put(Pid, Object),
+		io:format("Key is ~p~n",[K]),
+		io:format("Value is ~p~n",[V]),
+		store(T)
+	end.
