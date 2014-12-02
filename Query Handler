@@ -103,16 +103,12 @@ mapreduceProfanity(Pid) -> %Keys
 	dict:to_list(Result).
 
 maptags(RiakObject, _, B) ->
-	%[binary_to_term(riak_object:get_value(RiakObject))].
-	{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)),
-	[dict:from_list([{I, 1} || I <- HashtagList])].
-
-%	case B of
-%		true -> 
-%			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
-%		false ->
-%			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
-%	end.
+	case B of
+		true -> 
+			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
+		false ->
+			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
+	end.
 
 redtags(Input, _) ->
 	[lists:foldl(
