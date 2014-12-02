@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, mapreduceProfanity/1, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, retrieve_using_indexes/2, local_go/0]).
+-export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
 
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 
@@ -47,19 +47,19 @@ store() ->
 %% Lägg till datum i iso format, Date = 2014-11-28 och gör binär.
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-	Bucket = <<"Final_Sprint">>,
+	Bucket = <<"Double_Secondary">>,
 	%Key = <<"">>,
 	TimestampYMD = timestampYMD(),
 	Timestamp_7_days_ago = timestamp_7_days_ago(),
  	%Keys1 = [{Bucket, <<"key1">>}, {Bucket, <<"key2">>}, {Bucket, <<"key3">>}],
 	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
 	Keys = interval_keys(Range, Bucket),
-	%KeysPro = excludeProfanity(Nagot, Bucket)
-	%Result = mapreduce(Pid, Keys),
-	%io:format("Date: ~p~n", [Timestamp_7_days_ago]),
-	ResultPro = mapreduceProfanity(Pid),
-	%sortList(Result).
-	sortList(ResultPro).
+	ProfanityKeys = profanity_keys(Pid, Range, Bucket),
+	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
+	Result = mapreduce(Pid, Keys),
+	FilteredResult = mapreduce(Pid, FilteredKeys),
+	%io:format("Keys: ~p~n", [ProfanityKeys]).
+	sortList(Result, FilteredResult).
 	
 
 %% {538257293054181376,{},["MTVStars"]}
@@ -95,22 +95,9 @@ mapreduce(Pid, Keys) ->
 	dict:to_list(Result).
 
 
-%% Extra mapreduce to remove profanity.
-mapreduceProfanity(Pid) -> %Keys
-	{ok, [{1, [Result]}]} = riakc_pb_socket:mapred(
-                         Pid,
-                         {<<"Final_Sprint">>, [[<<"matches">>, <<"porn">>]]},
-                         [{map, {modfun, handler, maptags}, true, false},
-                          {reduce, {modfun, handler, redtags}, none, true}]),
-	dict:to_list(Result).
+maptags(RiakObject, _, _) ->
+	{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])].
 
-maptags(RiakObject, _, B) ->
-	case B of
-		true -> 
-			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])];
-		false ->
-			{_, _, HashtagList} = binary_to_term(riak_object:get_value(RiakObject)), [dict:from_list([{I, 1} || I <- HashtagList])]
-	end.
 
 redtags(Input, _) ->
 	[lists:foldl(
@@ -155,27 +142,32 @@ timestamp_30_days_ago() ->
 
 
 %% Retrieve something in time interval
-%% Spara tweets i iso format, kolla upp secondary indexes
 interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago) -> 
 	{_, {_, Range, _, _}} =	riakc_pb_socket:get_index_range(Pid, Bucket, 
                                 {binary_index, "Timestamp"}, 
                                 Timestamp_7_days_ago, TimestampYMD), Range.
 
+%% Bucket + Key to use as Key in mapreduce
 interval_keys(Range, Bucket) ->
 	[{Bucket, Keys} || Keys <- Range].
 
-
+%% Add profanity words
 %% Fixa lista med otillåtna ord
-%excludeProfanity(Bucket) -> 
-%	[{Bucket, [[<<"matches">>, Exclude]]} || Exclude <- ProfanityList].
+profanity_keys(Pid, Range, Bucket) ->
+	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
+		{binary_index, "Hashtags"}, <<"MTVStars">>), ProfanityKeys.
 
+%% Filtered range without keys containing profanity tags
+filtered_keys(Range, Bucket, ProfanityKeys) ->
+	NewRange = Range -- ProfanityKeys,
+	[{Bucket, FilteredKeys} || FilteredKeys <- NewRange].
+	
 
 %% This performs exact match index query using binary
 %% Can change to integer_index
-retrieve_using_indexes(Pid, Bucket) -> 
-	riakc_pb_socket:get_index(Pid, Bucket,
-		{binary_index, "TimeStamp"}, <<"2014-11-27">>). 
-
+match_query(Pid, Bucket) -> 
+	{_, {_, Match, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
+		{binary_index, "Hashtags"}, <<"porn">>, <<"">>), Match. 
 
 
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
@@ -185,10 +177,14 @@ fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].
 	
 
 %% Sorting in top10
-sortList(Result)->
-	Sort = lists:reverse(lists:keysort(2,Result)), 
-	lists:sublist(Sort, 1, 10).
-
+sortList(Result, FilteredResult)->
+	Sort = lists:reverse(lists:keysort(2, Result)), 
+	FilteredSort = lists:reverse(lists:keysort(2, FilteredResult)),
+	Top10 = lists:sublist(Sort, 1, 10),
+	FilteredTop10 = lists:sublist(FilteredSort, 1, 10),
+	io:format("Top10: ~p~n", [Top10]),
+	io:format("Revised Top10: ~p~n", [FilteredTop10]).
+	
 
 %% Storing the result from mapreduce
 store([H|T]) ->
@@ -205,6 +201,3 @@ store([H|T]) ->
 		io:format("Value is ~p~n",[V]),
 		store(T)
 	end.
-
-
-%% ProfanityList = [<<"porn">>, <<"sex">>, <<"pussy">>, <<"dick">>, <<"cum">>, <<"cumshot">>, <<"fuck">>, <<"fucking">>].
