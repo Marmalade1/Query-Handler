@@ -201,3 +201,13 @@ store([H|T]) ->
 		io:format("Value is ~p~n",[V]),
 		store(T)
 	end.
+
+
+{_, {_, ProfanityKeys1, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
+		{binary_index, "Hashtags"}, <<"porn">>, <<"nsfw">>),
+	{_, {_, ProfanityKeys2, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
+		{binary_index, "Hashtags"}, <<"sex">>, <<"cum">>),
+	{_, {_, ProfanityKeys3, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
+		{binary_index, "Hashtags"}, <<"pussy">>, <<"cumshot">>),
+	{_, {_, ProfanityKeys4, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
+		{binary_index, "Hashtags"}, <<"hentai">>, <<"dick">>), ProfanityKeys = ProfanityKeys1 ++ ProfanityKeys2 ++ ProfanityKeys3 ++ ProfanityKeys4.
