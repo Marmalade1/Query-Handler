@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
+-export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/3, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
 
 %% This requires that you have riak-erlang client on your computer.
 %% 1: Put handler in some directory and change directory to that directory,
@@ -16,35 +16,6 @@
 %% http://docs.basho.com/riak/latest/ops/advanced/configs/secondary-index/
 
 
-store() -> 
-	%% I = list_to_binary(integer_to_list(ID))
-	%% "127.0.0.1", 10017, "129.16.155.22", 8087
-	Timestamp = timestampYMD(),
-	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087),
-
-	Obj1 = riakc_obj:new(<<"Markus">>, <<"key1">>, {1, {}, ["beer", "bacon"]}),
-	Obj2 = riakc_obj:new(<<"Markus">>, <<"key2">>, {2, {}, ["kebab", "pizza"]}),
-	Obj3 = riakc_obj:new(<<"Markus">>, <<"key3">>, {3, {}, ["bacon", "hamburger"]}),
-
-	MetaData1 = riakc_obj:get_update_metadata(Obj1),
-	MetaData2 = riakc_obj:get_update_metadata(Obj2),
-	MetaData3 = riakc_obj:get_update_metadata(Obj3),
-
-	Obj1Secondary = riakc_obj:set_secondary_index(MetaData1, 
-		[{{binary_index, "Timestamp"}, [Timestamp]}]),
-	Obj2Secondary = riakc_obj:set_secondary_index(MetaData2, 
-		[{{binary_index, "Timestamp"}, [Timestamp]}]),
-	Obj3Secondary = riakc_obj:set_secondary_index(MetaData3, 
-		[{{binary_index, "Timestamp"}, [<<"2014-11-26">>]}]),
-
-	Obj1Upd = riakc_obj:update_metadata(Obj1, Obj1Secondary),
-	Obj2Upd = riakc_obj:update_metadata(Obj2, Obj2Secondary),
-	Obj3Upd = riakc_obj:update_metadata(Obj3, Obj3Secondary),
-
-  	riakc_pb_socket:put(Pid, Obj1Upd),
-  	riakc_pb_socket:put(Pid, Obj2Upd),
-  	riakc_pb_socket:put(Pid, Obj3Upd).
-  	%io:format("Stored, ~p~n", [Obj2Upd]).
 
 
 %% Start riak and mapreduce
@@ -53,7 +24,7 @@ store() ->
 %% Lägg till datum i iso format, Date = 2014-11-28 och gör binär.
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-	Bucket = <<"Double_Secondary">>,
+	Bucket = <<"Week1_Store">>,
 	%Key = <<"">>,
 	TimestampYMD = timestampYMD(),
 	Timestamp_7_days_ago = timestamp_7_days_ago(),
@@ -159,7 +130,7 @@ interval_keys(Range, Bucket) ->
 %% Fixa lista med otillåtna ord
 profanity_keys(Pid, Bucket) ->
 	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
-		{binary_index, "Hashtags"}, <<"MTVStars">>), ProfanityKeys.
+		{binary_index, "Hashtags"}, <<"FF">>), ProfanityKeys.
 
 %% Filtered range without keys containing profanity tags
 filtered_keys(Range, Bucket, ProfanityKeys) ->
@@ -195,7 +166,7 @@ store([H|T], Pid, Result) ->
 	case T of
 		[] -> io:format("done");
 		_ ->
-		Timetamp = timestampYMD(),
+		Timestamp = timestampYMD(),
 		{K,V} = hd([H|T]),
 		Bucket = <<"Result">>,
 		Key = list_to_binary(K),
@@ -203,10 +174,10 @@ store([H|T], Pid, Result) ->
 		Object = riakc_obj:new(Bucket, Key, Value),
 		MetaData = riakc_obj:get_update_metadata(Object),
 	    ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
-	      [{{binary_index, "Timestamp"}, [Timestamp]},
-	    NewObj = riakc_obj:update_metadata(Object, ObjectSecondary),
+	      [{{binary_index, "Timestamp"}, [Timestamp]}]),
+	    NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
 		riakc_pb_socket:put(Pid, NewObject),
 		io:format("Key is ~p~n",[K]),
 		io:format("Value is ~p~n",[Result]),
-		store(T)
+		store(T, Pid, Result)
 	end.
