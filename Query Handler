@@ -9,7 +9,6 @@
 %% 3: compile handler, c(handler).
 %% 4: Run it, handler:go(). This will give you 2, top10 mapreduced lists.
 
-
 %% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
 %% Add beam path file to all nodes, advance.config file.
 
@@ -61,11 +60,12 @@ go() ->
  	%Keys1 = [{Bucket, <<"key1">>}, {Bucket, <<"key2">>}, {Bucket, <<"key3">>}],
 	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
 	Keys = interval_keys(Range, Bucket),
-	ProfanityKeys = profanity_keys(Pid, Range, Bucket),
+	ProfanityKeys = profanity_keys(Pid, Bucket),
 	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
 	Result = mapreduce(Pid, Keys),
 	FilteredResult = mapreduce(Pid, FilteredKeys),
-	%io:format("Keys: ~p~n", [ProfanityKeys]).
+	%Match = match_query(Pid, Bucket),
+	io:format("Keys: ~p~n", [ProfanityKeys]),
 	sortList(Result, FilteredResult).
 	
 
@@ -121,7 +121,6 @@ timestamp() ->
     IsoFormat = io_lib:format(Format, [Year, Month, Day, Hour, Min, Sec]),
     list_to_binary(IsoFormat).
 
-
 %% Timetamp in year-month-day format
 timestampYMD() ->
 	{{Year, Month, Day}, _} = calendar:local_time(),
@@ -129,8 +128,7 @@ timestampYMD() ->
     IsoFormat = io_lib:format(Format, [Year, Month, Day]),
     list_to_binary(IsoFormat).
 
-
-%% Timestamp - 7 days.
+%% Timestamp for last 7 days.
 timestamp_7_days_ago() ->
 	{{Year, Month, Day}, _} = calendar:local_time(),
 	{Y, M, D} = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days({Year, Month, Day}) - 7),
@@ -138,8 +136,7 @@ timestamp_7_days_ago() ->
 	IsoFormat = io_lib:format(Format, [Y, M, D]),
     list_to_binary(IsoFormat).
 
-
-%% Timestamp - 30 days.
+%% Timestamp for last 30 days.
 timestamp_30_days_ago() ->
 	{{Year, Month, Day}, _} = calendar:local_time(),
 	{Y, M, D} = calendar:gregorian_days_to_date(calendar:date_to_gregorian_days({Year, Month, Day}) - 30),
@@ -160,7 +157,7 @@ interval_keys(Range, Bucket) ->
 
 %% Add profanity words
 %% Fixa lista med otillåtna ord
-profanity_keys(Pid, Range, Bucket) ->
+profanity_keys(Pid, Bucket) ->
 	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
 		{binary_index, "Hashtags"}, <<"MTVStars">>), ProfanityKeys.
 
@@ -174,7 +171,7 @@ filtered_keys(Range, Bucket, ProfanityKeys) ->
 %% Can change to integer_index
 match_query(Pid, Bucket) -> 
 	{_, {_, Match, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
-		{binary_index, "Hashtags"}, <<"porn">>, <<"">>), Match. 
+		{binary_index, "Hashtags"}, <<"porn">>), Match. 
 
 
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
@@ -194,18 +191,22 @@ sortList(Result, FilteredResult)->
 	
 
 %% Storing the result from mapreduce
-store([H|T]) ->
+store([H|T], Pid, Result) ->
 	case T of
-		[]->io:format("done");
-		_->
-		{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
+		[] -> io:format("done");
+		_ ->
+		Timetamp = timestampYMD(),
 		{K,V} = hd([H|T]),
+		Bucket = <<"Result">>,
 		Key = list_to_binary(K),
-		Value = list_to_binary(integer_to_list(V)),
-		Object = riakc_obj:new(<<"result">>,Key,Value),
-		riakc_pb_socket:put(Pid, Object),
+		Value = list_to_binary(integer_to_list(Result)),
+		Object = riakc_obj:new(Bucket, Key, Value),
+		MetaData = riakc_obj:get_update_metadata(Object),
+	    ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
+	      [{{binary_index, "Timestamp"}, [Timestamp]},
+	    NewObj = riakc_obj:update_metadata(Object, ObjectSecondary),
+		riakc_pb_socket:put(Pid, NewObject),
 		io:format("Key is ~p~n",[K]),
-		io:format("Value is ~p~n",[V]),
+		io:format("Value is ~p~n",[Result]),
 		store(T)
 	end.
-
