@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/3, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
+-export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/1, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
 
 %% This requires that you have riak-erlang client on your computer.
 %% 1: Put handler in some directory and change directory to that directory,
@@ -162,10 +162,11 @@ sortList(Result, FilteredResult)->
 	
 
 %% Storing the result from mapreduce
-store([H|T], Pid) ->
+store([H|T]) ->
 	case T of
 		[] -> io:format("done");
 		_ ->
+		{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 		Timestamp = timestampYMD(),
 		{K,V} = hd([H|T]),
 		Bucket = <<"Result">>,
@@ -179,5 +180,5 @@ store([H|T], Pid) ->
 		riakc_pb_socket:put(Pid, NewObject),
 		io:format("Key is ~p~n",[K]),
 		io:format("Value is ~p~n",[Result]),
-		store(T, Pid, Result)
+		store(T)
 	end.
