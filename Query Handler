@@ -1,5 +1,5 @@
 -module(handler).
--export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/1, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
+-export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/1, timestamp/0, timestampYMD/0, local_go/0, match_query/2, format_result/1]).
 
 %% This requires that you have riak-erlang client on your computer.
 %% 1: Put handler in some directory and change directory to that directory,
@@ -25,19 +25,20 @@
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 	Bucket = <<"Week1_Store">>,
-	%Key = <<"">>,
 	TimestampYMD = timestampYMD(),
 	Timestamp_7_days_ago = timestamp_7_days_ago(),
- 	%Keys1 = [{Bucket, <<"key1">>}, {Bucket, <<"key2">>}, {Bucket, <<"key3">>}],
 	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
 	Keys = interval_keys(Range, Bucket),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
 	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
 	Result = mapreduce(Pid, Keys),
 	FilteredResult = mapreduce(Pid, FilteredKeys),
-	%Match = match_query(Pid, Bucket),
-	io:format("Keys: ~p~n", [ProfanityKeys]),
-	sortList(Result, FilteredResult).
+	Top10 = sortList(Result),
+	FilteredTop10 = sortList(FilteredResult),
+	%io:format("Keys: ~p~n", [ProfanityKeys]),
+	io:format("Top10: ~p~n", [Top10]),
+	io:format("Revised Top10: ~p~n", [FilteredTop10]),
+	store(Top10).
 	
 
 %% {538257293054181376,{},["MTVStars"]}
@@ -152,19 +153,32 @@ fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].
 	
 
 %% Sorting in top10
-sortList(Result, FilteredResult)->
+sortList(Result)->
 	Sort = lists:reverse(lists:keysort(2, Result)), 
-	FilteredSort = lists:reverse(lists:keysort(2, FilteredResult)),
 	Top10 = lists:sublist(Sort, 1, 10),
-	FilteredTop10 = lists:sublist(FilteredSort, 1, 10),
-	io:format("Top10: ~p~n", [Top10]),
-	io:format("Revised Top10: ~p~n", [FilteredTop10]).
+	Top10.
 	
+	
+
+%% Change format of result to store	
+format_result(List) -> format_result(List, []).
+format_result([H|T], Acc)->	
+	case T of
+		[] -> {A, B} = H,
+			  Hashtag = list_to_atom(A),
+			  Final = Acc ++ [{Hashtag, B}];
+			  % io:format("~p~n",[Final]);
+		_ -> {A, B} = H,
+			  Hashtag = list_to_atom(A),
+			  format_result(T, Acc ++ [{Hashtag, B}])
+			  % io:format("~p~n",[Hashtag])
+	end.
+
 
 %% Storing the result from mapreduce
 store([H|T]) ->
 	case T of
-		[] -> io:format("done");
+		[] -> io:format("Result stored");
 		_ ->
 		{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 		Timestamp = timestampYMD(),
@@ -175,7 +189,7 @@ store([H|T]) ->
 		Object = riakc_obj:new(Bucket, Key, Value),
 		MetaData = riakc_obj:get_update_metadata(Object),
 	    	ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
-		  [{{binary_index, "Timestamp"}, [Timestamp]}]),
+		 [{{binary_index, "Timestamp"}, [Timestamp]}]),
 		NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
 		riakc_pb_socket:put(Pid, NewObject),
 		io:format("Key is ~p~n",[K]),
