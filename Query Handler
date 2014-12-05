@@ -1,7 +1,14 @@
 -module(handler).
 -export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/0, timestamp/0, timestampYMD/0, local_go/0, match_query/2]).
 
+%% This requires that you have riak-erlang client on your computer.
+%% 1: Put handler in some directory and change directory to that directory,
+%% for example cd Erlang,
+%% 2: Start erlang with the line below here where you add YOUR riak-erlang client path instead,
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
+%% 3: compile handler, c(handler).
+%% 4: Run it, handler:go(). This will give you 2, top10 mapreduced lists.
+
 
 %% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
 %% Add beam path file to all nodes, advance.config file.
