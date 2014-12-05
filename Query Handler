@@ -35,9 +35,8 @@ go() ->
 	FilteredTop10 = sortList(FilteredResult),
 	%io:format("Keys: ~p~n", [ProfanityKeys]),
 	io:format("Top10: ~p~n", [Top10]),
-	io:format("Revised Top10: ~p~n", [FilteredTop10]),
-	store(Top10).
-	
+	io:format("Revised Top10: ~p~n", [FilteredTop10]).
+	%store(Top10).	
 
 %% {538257293054181376,{},["MTVStars"]}
 local_go() ->
@@ -57,7 +56,7 @@ local_go() ->
 
 %% Fetch value from key
 fetch(Pid, Bucket, Key) -> 
-	{ok, Fetched} = riakc_pb_socket:get(Pid, Bucket, Key),
+	{ok, Fetched} = riakc_pb_socket:get(Pid, <<"Result">>, Key),
 	Value = riakc_obj:get_value(Fetched),
 	{ok, binary_to_term(Value)}.
 
@@ -149,14 +148,11 @@ match_query(Pid, Bucket) ->
 fix_hashtag([]) -> [];
 fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].	
 	
-
 %% Sorting in top10
 sortList(Result)->
 	Sort = lists:reverse(lists:keysort(2, Result)), 
 	Top10 = lists:sublist(Sort, 1, 10),
 	Top10.
-	
-	
 
 %% Change format of result to store	
 format_result(List) -> format_result(List, []).
@@ -186,11 +182,11 @@ store([H|T]) ->
 		Value = list_to_binary(integer_to_list(V)),
 		Object = riakc_obj:new(Bucket, Key, Value),
 		MetaData = riakc_obj:get_update_metadata(Object),
-	    	ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
+	    ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
 		 [{{binary_index, "Timestamp"}, [Timestamp]}]),
 		NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
 		riakc_pb_socket:put(Pid, NewObject),
 		io:format("Key is ~p~n",[K]),
-		io:format("Value is ~p~n",[Result]),
+		io:format("Value is ~p~n",[V]),
 		store(T)
 	end.
