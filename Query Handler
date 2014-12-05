@@ -12,11 +12,9 @@
 %% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
 %% Add beam path file to all nodes, advance.config file.
 
-%% To change secondary index config:
-%% http://docs.basho.com/riak/latest/ops/advanced/configs/secondary-index/
-
-
-
+%% ----------------------------------------------------------------------
+%% Handler
+%% ----------------------------------------------------------------------
 
 %% Start riak and mapreduce
 %% "127.0.0.1", 10017, "129.16.155.22", 8087
