@@ -162,7 +162,7 @@ sortList(Result, FilteredResult)->
 	
 
 %% Storing the result from mapreduce
-store([H|T], Pid, Result) ->
+store([H|T], Pid) ->
 	case T of
 		[] -> io:format("done");
 		_ ->
@@ -170,12 +170,12 @@ store([H|T], Pid, Result) ->
 		{K,V} = hd([H|T]),
 		Bucket = <<"Result">>,
 		Key = list_to_binary(K),
-		Value = list_to_binary(integer_to_list(Result)),
+		Value = list_to_binary(integer_to_list(V)),
 		Object = riakc_obj:new(Bucket, Key, Value),
 		MetaData = riakc_obj:get_update_metadata(Object),
-	    ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
-	      [{{binary_index, "Timestamp"}, [Timestamp]}]),
-	    NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
+	    	ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
+		  [{{binary_index, "Timestamp"}, [Timestamp]}]),
+		NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
 		riakc_pb_socket:put(Pid, NewObject),
 		io:format("Key is ~p~n",[K]),
 		io:format("Value is ~p~n",[Result]),
