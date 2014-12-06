@@ -190,3 +190,40 @@ store([H|T]) ->
 		io:format("Value is ~p~n",[V]),
 		store(T)
 	end.
+
+% [{"2014MAMA",82},{"MTVStars",68},{"MAMA2014",35},{"3YearsOf5SOS",12},{"AutumnStatement",12},{"Social_Media",12},{"INFINITE",12},{"MGWV",11},{"RT",11},{"porn",10}] 
+
+storeTop10(List) ->storeTop10(List, []).
+storeTop10([H|T], Acc) ->	
+	case T of
+		[] -> 
+			{A, B} = H,
+			Hashtag = list_to_atom(A),
+			Final = Acc ++ [{Hashtag, B}],
+			% Final is the list after remove quotes
+			V = lists:flatten(io_lib:write(Final)),
+			% Using V change Final list to String, because we have to use String in list_to_binary()
+			% io:format("~p~n",[V]),
+			Value = list_to_binary(V),
+			Timestamp = timestampYMD(),
+			% io:format("~p~n",[Value]),
+			{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
+			%this line is connect to riak
+			Object = riakc_obj:new(<<"Result">>, <<"top10">>, Value), %% <<"top10">>, change key?
+			MetaData = riakc_obj:get_update_metadata(Object),
+	    	ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
+	    		[{{binary_index, "Timestamp"}, [Timestamp]}]),
+	    	NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
+			% create a object 
+			riakc_pb_socket:put(Pid, NewObject);
+			% store function 
+			% io:format("~p~n",[Final]);
+		_ ->
+			{A,B } = H,
+			Hashtag = list_to_atom(A),
+			storeTop10(T, Acc ++ [{Hashtag, B}])
+			% io:format("~p~n",[Hashtag])
+
+	end.
+
+% "[{'2014MAMA',82},{'MTVStars',68},{'MAMA2014',35}]"
