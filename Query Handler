@@ -1,9 +1,8 @@
 -module(handler).
--export([fetch/3, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2, go/0, store/1, timestamp/0, timestampYMD/0, local_go/0, match_query/3, format_result/1, storeTop10/1]).
+-export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/3, storeTop10/1]).
 
 %% This requires that you have riak-erlang client on your computer.
-%% 1: Put handler in some directory and change directory to that directory,
-%% for example cd Erlang,
+%% 1: Change directory to directory with handler moudle
 %% 2: Start erlang with the line below here where you add YOUR riak-erlang client path instead,
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 %% 3: compile handler, c(handler).
@@ -22,10 +21,17 @@
 %% Lägg till datum i iso format, Date = 2014-11-28 och gör binär.
 go() -> 
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-	Bucket = <<"Week1_Store">>,
-	TimestampYMD = timestampYMD(),
-	Timestamp_7_days_ago = timestamp_7_days_ago(),
-	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
+	Bucket = <<"Marmalade_Week1">>,
+	show_today(Pid, Bucket),
+	show_last_7(Pid, Bucket),
+	show_last_30(Pid, Bucket).
+	
+
+%% Show results for today
+show_today(Pid, Bucket) ->
+	Timestamp2 = timestampYMD(),
+	Timestamp1 = timestampYMD(),
+	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
 	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
@@ -33,36 +39,54 @@ go() ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	%io:format("Keys: ~p~n", [ProfanityKeys]),
-	io:format("Top10: ~p~n", [Top10]),
-	%io:format("Revised Top10: ~p~n", [FilteredTop10]).
-	Match = match_query(Pid, <<"Result">>, TimestampYMD),
-	io:format("Buckets today: ~p~n", [Match]),
-	storeTop10(Top10).	
+	storeTop10(Top10),
+	storeTop10(FilteredTop10).
 
-%% {538257293054181376,{},["MTVStars"]}
-local_go() ->
-	{ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", 10017),
-	Bucket = <<"Markus_Sec">>,
-	%Key = <<"">>,
-	TimestampYMD = timestampYMD(),
-	Timestamp_7_days_ago = timestamp_7_days_ago(),
-	Timestamp_30_days_ago = timestamp_30_days_ago(),
-	Range = interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago),
-	%Keys1 = [{Bucket, <<"538257293088161795">>}, {Bucket, <<"538257288885436417">>}],
+%% Show results for last 7 days
+show_last_7(Pid, Bucket) ->
+	Timestamp2 = timestampYMD(),
+	Timestamp1 = timestamp_7_days_ago(),
+	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
-	
-	%fetch(Pid, Bucket, Key).
-	mapreduce(Pid, Keys).
+	ProfanityKeys = profanity_keys(Pid, Bucket),
+	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
+	Result = mapreduce(Pid, Keys),
+	FilteredResult = mapreduce(Pid, FilteredKeys),
+	Top10 = sortList(Result),
+	FilteredTop10 = sortList(FilteredResult),
+	storeTop10(Top10),
+	storeTop10(FilteredTop10).
 
+%% Show results for last 30 days
+show_last_30(Pid, Bucket) ->
+	Timestamp1 = timestampYMD(),
+	Timestamp2 = timestamp_30_days_ago(),
+	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
+	Keys = interval_keys(Range, Bucket),
+	ProfanityKeys = profanity_keys(Pid, Bucket),
+	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
+	Result = mapreduce(Pid, Keys),
+	FilteredResult = mapreduce(Pid, FilteredKeys),
+	Top10 = sortList(Result),
+	FilteredTop10 = sortList(FilteredResult),
+	storeTop10(Top10),
+	storeTop10(FilteredTop10).
+
+%% Remove object from Bucket
+delete_object() -> 
+	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087),
+	Bucket = <<"Top10">>,
+	Key = <<"">>,
+	riakc_pb_socket:delete(Pid, Bucket, Key),
+	io:format("Key deleted, ").
 
 %% Fetch value from key
-fetch(Pid, Bucket, Key) -> 
-	%ResBuckets = riakc_pb_socket:list_keys(Pid, Bucket),
-	%ResBuckets.
-	{ok, Fetched} = riakc_pb_socket:get(Pid, Bucket, Key),
-	Value = riakc_obj:get_value(Fetched),
-	{ok, binary_to_term(Value)}.
+fetch(Pid) -> 
+	ResBuckets = riakc_pb_socket:list_keys(Pid, <<"Result">>),
+	ResBuckets.
+	%{ok, Fetched} = riakc_pb_socket:get(Pid, Bucket, Key),
+	%Value = riakc_obj:get_value(Fetched),
+	%{ok, binary_to_term(Value)}.
 
 
 %% Mapreduce for counting tags.
@@ -119,10 +143,9 @@ timestamp_30_days_ago() ->
 
 
 %% Retrieve something in time interval
-interval(Pid, Bucket, TimestampYMD, Timestamp_7_days_ago) -> 
+interval(Pid, Bucket, Timestamp2, Timestamp1) -> 
 	{_, {_, Range, _, _}} =	riakc_pb_socket:get_index_range(Pid, Bucket, 
-                                {binary_index, "Timestamp"}, 
-                                Timestamp_7_days_ago, TimestampYMD), Range.
+		{binary_index, "Timestamp"}, Timestamp1, Timestamp2), Range.
 
 %% Bucket + Key to use as Key in mapreduce
 interval_keys(Range, Bucket) ->
@@ -131,8 +154,8 @@ interval_keys(Range, Bucket) ->
 %% Add profanity words
 %% Fixa lista med otillåtna ord
 profanity_keys(Pid, Bucket) ->
-	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
-		{binary_index, "Hashtags"}, <<"FF">>), ProfanityKeys.
+	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(Pid, Bucket, 
+		{binary_index, "Hashtag"}, <<"porn">>, <<"sex">>), ProfanityKeys.
 
 %% Filtered range without keys containing profanity tags
 filtered_keys(Range, Bucket, ProfanityKeys) ->
@@ -158,51 +181,15 @@ sortList(Result)->
 	Top10 = lists:sublist(Sort, 1, 10),
 	Top10.
 
-%% Change format of result to store	
-format_result(List) -> format_result(List, []).
-format_result([H|T], Acc)->	
-	case T of
-		[] -> {A, B} = H,
-			  Hashtag = list_to_atom(A),
-			  Final = Acc ++ [{Hashtag, B}];
-			  % io:format("~p~n",[Final]);
-		_ -> {A, B} = H,
-			  Hashtag = list_to_atom(A),
-			  format_result(T, Acc ++ [{Hashtag, B}])
-			  % io:format("~p~n",[Hashtag])
-	end.
 
-
-%% Storing the result from mapreduce
-store([H|T]) ->
-	case T of
-		[] -> io:format("Result stored");
-		_ ->
-		{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-		Timestamp = timestampYMD(),
-		{K,V} = hd([H|T]),
-		Bucket = <<"Result">>,
-		Key = list_to_binary(K),
-		Value = list_to_binary(integer_to_list(V)),
-		Object = riakc_obj:new(Bucket, Key, Value),
-		MetaData = riakc_obj:get_update_metadata(Object),
-	    ObjectSecondary = riakc_obj:set_secondary_index(MetaData, 
-		 [{{binary_index, "Timestamp"}, [Timestamp]}]),
-		NewObject = riakc_obj:update_metadata(Object, ObjectSecondary),
-		riakc_pb_socket:put(Pid, NewObject),
-		io:format("Key is ~p~n", [K]),
-		io:format("Value is ~p~n", [V]),
-		store(T)
-	end.
-
-% [{"2014MAMA",82},{"MTVStars",68},{"MAMA2014",35},{"3YearsOf5SOS",12},{"AutumnStatement",12},{"Social_Media",12},{"INFINITE",12},{"MGWV",11},{"RT",11},{"porn",10}] 
-
+%% Storing the results into a result bucket that can be
+%% retrieved from website.
 storeTop10(List) ->storeTop10(List, []).
 storeTop10([H|T], Acc) ->	
 	case T of
 		[] -> 
 			{A, B} = H,
-			Hashtag = list_to_atom(string:to_lower(A)),
+			Hashtag = list_to_atom(A), %% string:to_lower()
 			Final = Acc ++ [{Hashtag, B}],
 			% Final is the list after remove quotes
 			V = lists:flatten(io_lib:write(Final)),
@@ -211,7 +198,7 @@ storeTop10([H|T], Acc) ->
 			Timestamp = timestampYMD(),
 			Bucket = <<"Result">>,
 			Key = <<"Top10">>,
-			io:format("Key: ~p~n",[Value]),
+			%io:format("Key: ~p~n",[Value]),
 			{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 			Object = riakc_obj:new(Bucket, Key, Value), 
 			MetaData = riakc_obj:get_update_metadata(Object),
@@ -221,13 +208,24 @@ storeTop10([H|T], Acc) ->
 			riakc_pb_socket:put(Pid, NewObject);
 		_ ->
 			{A,B } = H,
-			Hashtag = list_to_atom(string:to_lower(A)),
+			Hashtag = list_to_atom(A), %% string:to_lower()
 			storeTop10(T, Acc ++ [{Hashtag, B}])
-			% io:format("~p~n",[Hashtag])
 
 	end.
-%% Look into 
-%% This does not seem to work if a digit
-%% Fixed capital letters
-
-% "[{'2014MAMA',82},{'MTVStars',68},{'MAMA2014',35}]"
+%% Loop 
+loop() ->
+    receive
+    	{Pid, start} ->
+    		Pid ! {self(), update, handler_started}
+    		go(),
+    		loop();
+    	{Pid, stop} -> 
+    		Pid ! {self(), stop, stopped},
+    		loop();
+    	{'EXIT', Pid, _} -> 
+    		Pid ! {self(), restart_handler},
+    		loop();
+    	{Pid, restart} -> 
+    		Pid ! {self(), restart_handler},
+       		loop()
+    end.
