@@ -1,5 +1,5 @@
 -module(handler).
--export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/3, storeTop10/1]).
+-export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/3, storeTop10/2, loop/0]).
 
 %% This requires that you have riak-erlang client on your computer.
 %% 1: Change directory to directory with handler moudle
@@ -29,6 +29,8 @@ go() ->
 
 %% Show results for today
 show_today(Pid, Bucket) ->
+	Key1 = <<"Top10_Today">>,
+	Key2 = <<"Filtered_Top10_Today">>,
 	Timestamp2 = timestampYMD(),
 	Timestamp1 = timestampYMD(),
 	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
@@ -39,13 +41,15 @@ show_today(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	storeTop10(Top10),
-	storeTop10(FilteredTop10).
+	storeTop10(Top10, Key1),
+	storeTop10(FilteredTop10, Key2).
 
 %% Show results for last 7 days
 show_last_7(Pid, Bucket) ->
-	Timestamp2 = timestampYMD(),
+	Key1 = <<"Top10_Week">>,
+	Key2 = <<"Filtered_Top10_Week">>,
 	Timestamp1 = timestamp_7_days_ago(),
+	Timestamp2 = timestampYMD(),
 	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
@@ -54,13 +58,15 @@ show_last_7(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	storeTop10(Top10),
-	storeTop10(FilteredTop10).
+	storeTop10(Top10, Key1),
+	storeTop10(FilteredTop10, Key2).
 
 %% Show results for last 30 days
 show_last_30(Pid, Bucket) ->
-	Timestamp1 = timestampYMD(),
-	Timestamp2 = timestamp_30_days_ago(),
+	Key1 = <<"Top10_Month">>,
+	Key2 = <<"Filtered_Top10_Month">>,
+	Timestamp1 = timestamp_30_days_ago(),
+	Timestamp2 = timestampYMD(),
 	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
@@ -69,8 +75,8 @@ show_last_30(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	storeTop10(Top10),
-	storeTop10(FilteredTop10).
+	storeTop10(Top10, Key1),
+	storeTop10(FilteredTop10, Key2).
 
 %% Remove object from Bucket
 delete_object() -> 
@@ -87,7 +93,6 @@ fetch(Pid) ->
 	%{ok, Fetched} = riakc_pb_socket:get(Pid, Bucket, Key),
 	%Value = riakc_obj:get_value(Fetched),
 	%{ok, binary_to_term(Value)}.
-
 
 %% Mapreduce for counting tags.
 mapreduce(Pid, Keys) -> 
@@ -143,7 +148,7 @@ timestamp_30_days_ago() ->
 
 
 %% Retrieve something in time interval
-interval(Pid, Bucket, Timestamp2, Timestamp1) -> 
+interval(Pid, Bucket, Timestamp1, Timestamp2) -> 
 	{_, {_, Range, _, _}} =	riakc_pb_socket:get_index_range(Pid, Bucket, 
 		{binary_index, "Timestamp"}, Timestamp1, Timestamp2), Range.
 
@@ -184,8 +189,8 @@ sortList(Result)->
 
 %% Storing the results into a result bucket that can be
 %% retrieved from website.
-storeTop10(List) ->storeTop10(List, []).
-storeTop10([H|T], Acc) ->	
+storeTop10(List, Key) ->storeTop10(List, Key, []).
+storeTop10([H|T], Key, Acc) ->	
 	case T of
 		[] -> 
 			{A, B} = H,
@@ -197,7 +202,7 @@ storeTop10([H|T], Acc) ->
 			Value = list_to_binary(V),
 			Timestamp = timestampYMD(),
 			Bucket = <<"Result">>,
-			Key = <<"Top10">>,
+			%Key = <<"Top10">>,
 			%io:format("Key: ~p~n",[Value]),
 			{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 			Object = riakc_obj:new(Bucket, Key, Value), 
@@ -216,7 +221,7 @@ storeTop10([H|T], Acc) ->
 loop() ->
     receive
     	{Pid, start} ->
-    		Pid ! {self(), update, handler_started}
+    		Pid ! {self(), update, handler_started},
     		go(),
     		loop();
     	{Pid, stop} -> 
