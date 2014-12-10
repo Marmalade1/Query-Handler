@@ -1,0 +1,14 @@
+-module(node).
+-export([start/0, stop/0]).
+
+start() ->
+	net_kernel:start([node2, shortnames]),
+	register(node2_shell, self()),
+
+	{node1_shell, node1@ubuntu} ! {hi_rcvr, self()},
+	receive
+		{Msg, Pid} -> Msg
+	end.
+
+stop() ->
+	net_kernel:stop().
