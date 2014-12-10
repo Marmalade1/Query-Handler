@@ -1,0 +1,14 @@
+-module(node1).
+-export([start/0, stop/0]).
+
+start() ->
+	net_kernel:start([node1, shortnames]),
+	net_kernel:connect_node(node2@ubuntu),
+	register(node1_shell, self()),
+
+	%{planner_shell,planner@ubuntu} ! {hi_handler, self()},
+	receive
+		{Msg, Pid} -> Pid ! {got_your_msg_sender, self()} end.
+
+stop() ->
+	net_kernel:stop().
