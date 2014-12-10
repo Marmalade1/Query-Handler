@@ -194,7 +194,9 @@ storeTop10([H|T], Key, Acc) ->
 	case T of
 		[] -> 
 			{A, B} = H,
-			Hashtag = list_to_atom(A), %% string:to_lower()
+			Hashtag = list_to_atom(string:to_upper(A)), 
+			% convert the string to upper case
+			%% string:to_lower()
 			Final = Acc ++ [{Hashtag, B}],
 			% Final is the list after remove quotes
 			V = lists:flatten(io_lib:write(Final)),
@@ -213,7 +215,9 @@ storeTop10([H|T], Key, Acc) ->
 			riakc_pb_socket:put(Pid, NewObject);
 		_ ->
 			{A,B } = H,
-			Hashtag = list_to_atom(A), %% string:to_lower()
+			Hashtag = list_to_atom(string:to_upper(A)), 
+			%% convert the string to upper case
+			%% string:to_lower()
 			storeTop10(T, Acc ++ [{Hashtag, B}])
 
 	end.
