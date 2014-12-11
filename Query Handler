@@ -1,30 +1,53 @@
 -module(handler).
 -export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/3, storeTop10/2, loop/0]).
 
+
+%% ----------------------------------------------------------------------
+%% Running the file
+%% ----------------------------------------------------------------------
 %% This requires that you have riak-erlang client on your computer.
 %% 1: Change directory to directory with handler moudle
 %% 2: Start erlang with the line below here where you add YOUR riak-erlang client path instead,
 %% erl -pa /home/erlach/riak-erlang-client/ebin/ /home/erlach/riak-erlang-client/deps/*/ebin
 %% 3: compile handler, c(handler).
-%% 4: Run it, handler:go(). This will give you 2, top10 mapreduced lists.
+%% 4: Run it, handler:go(). This will store 6, top10 mapreduced lists
+%% into riak. Top10 and Top10 Revised lists for today, 1 week and 1 month.
+%% ----------------------------------------------------------------------
 
+
+%% -----------------------------------------------------------------------
+%% Local Server
+%% ----------------------------------------------------------------------
 %% Reload nodes, sudo dev1/bin/riak start and do it for all 5 nodes.
 %% Add beam path file to all nodes, advance.config file.
+%% ----------------------------------------------------------------------
+
+
+%% ----------------------------------------------------------------------
+%% Settings
+%% -----------------------------------------------------------------------
+%% IP: "127.0.0.1", 10017 or  "129.16.155.22", 8087
+%% Keys: = [{Bucket, Key}, {Bucket, Key}] in binary
+%% Bucket = <<"Alpha">>
+%% Resultbucket = <<"Result">>
+%% Different keys for each time interval sent in each individual function.
+%% ----------------------------------------------------------------------
+
 
 %% ----------------------------------------------------------------------
 %% Handler
 %% ----------------------------------------------------------------------
 
-%% Start riak and mapreduce
-%% "127.0.0.1", 10017, "129.16.155.22", 8087
-%% Keys = [{Bucket, Key}, {Bucket, Key}] i binär form.
-%% Lägg till datum i iso format, Date = 2014-11-28 och gör binär.
 go() -> 
+	%supervisor_loop ! {self(), update, storing},
+	io:format("Updating...~n"),
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-	Bucket = <<"Marmalade_Week1">>,
+	Bucket = <<"Testing_New">>,
 	show_today(Pid, Bucket),
 	show_last_7(Pid, Bucket),
-	show_last_30(Pid, Bucket).
+	show_last_30(Pid, Bucket),
+	supervisor_loop ! {self(), stop},
+	io:format("All lists updated and stored! ~n").
 	
 
 %% Show results for today
@@ -175,8 +198,8 @@ match_query(Pid, Bucket, TimestampYMD) ->
 		{binary_index, "Timestamp"}, TimestampYMD), Match. 
 
 
+%% Fixing hashtag format
 %% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
-%% [{[{<<"t">>,<<"hej">>}, {<<"i">>,""}]}, {[{<<"t">>,<<"hejda">>},{<<"i">>,""}]}]
 fix_hashtag([]) -> [];
 fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].	
 	
@@ -189,18 +212,15 @@ sortList(Result)->
 
 %% Storing the results into a result bucket that can be
 %% retrieved from website.
-storeTop10(List, Key) ->storeTop10(List, Key, []).
+storeTop10(List, Key) -> storeTop10(List, Key, []).
 storeTop10([H|T], Key, Acc) ->	
 	case T of
 		[] -> 
 			{A, B} = H,
-			Hashtag = list_to_atom(string:to_upper(A)), 
-			% convert the string to upper case
-			%% string:to_lower()
+			Hashtag = list_to_atom(string:to_upper(A)), %% string:to_lower()
 			Final = Acc ++ [{Hashtag, B}],
 			% Final is the list after remove quotes
 			V = lists:flatten(io_lib:write(Final)),
-			% Using V change Final list to String, because we have to use String in list_to_binary()
 			Value = list_to_binary(V),
 			Timestamp = timestampYMD(),
 			Bucket = <<"Result">>,
@@ -215,26 +235,22 @@ storeTop10([H|T], Key, Acc) ->
 			riakc_pb_socket:put(Pid, NewObject);
 		_ ->
 			{A,B } = H,
-			Hashtag = list_to_atom(string:to_upper(A)), 
-			%% convert the string to upper case
-			%% string:to_lower()
-			storeTop10(T, Acc ++ [{Hashtag, B}])
+			Hashtag = list_to_atom(string:to_upper(A)), %% string:to_lower()
+			storeTop10(T, Key, Acc ++ [{Hashtag, B}])
 
 	end.
+
 %% Loop 
 loop() ->
     receive
     	{Pid, start} ->
-    		Pid ! {self(), update, handler_started},
     		go(),
     		loop();
     	{Pid, stop} -> 
     		Pid ! {self(), stop, stopped},
     		loop();
     	{'EXIT', Pid, _} -> 
-    		Pid ! {self(), restart_handler},
-    		loop();
-    	{Pid, restart} -> 
-    		Pid ! {self(), restart_handler},
-       		loop()
+    		supervisor_loop ! {self(), restart_handler},
+    		loop()
+
     end.
