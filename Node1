@@ -1,6 +1,20 @@
 -module(node1).
 -export([start/0, stop/0]).
 
+%% ------------------------------------------------------------
+%% Erlang node cluster
+%% ------------------------------------------------------------
+
+%% erl -sname name
+%% net_kernel:connect_node(nameofothernode@host)
+%% nodes() to see connections
+
+%% register(sname, Pid)
+%% Send message:
+%% {regname, node@host} ! {Msg, self()}. <- pattern match
+%% Receive message:
+%% receive {Msg, Pid} -> Pid ! Msg end. <- pattern match
+
 start() ->
 	net_kernel:start([node1, shortnames]),
 	net_kernel:connect_node(node2@ubuntu),
