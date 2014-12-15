@@ -1,5 +1,5 @@
 -module(handler).
--export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, fix_hashtag/1, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/3, storeTop10/2, loop/0]).
+-export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/2, storeTop10/2, loop/0]).
 
 
 %% ----------------------------------------------------------------------
@@ -43,14 +43,15 @@ go() ->
 	io:format("Updating...~n"),
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 	Bucket = <<"Alpha">>,
-	show_today(Pid, Bucket),
+	%show_today(Pid, Bucket),
 	show_last_7(Pid, Bucket),
-	show_last_30(Pid, Bucket),
+	%show_last_30(Pid, Bucket),
 	io:format("All lists updated and stored! ~n").
 	
 
 %% Show results for today
 show_today(Pid, Bucket) ->
+	io:format("Updating Daily Top 10... ~n"),
 	Key1 = <<"Top10_Today">>,
 	Key2 = <<"Filtered_Top10_Today">>,
 	Timestamp2 = timestampYMD(),
@@ -63,13 +64,15 @@ show_today(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	io:format("Top10 Today: ~p~n", [Top10]),
+	io:format("Top 10 Today: ~p~n", [Top10]),
+	io:format("Revised Top 10 Today: ~p~n", [FilteredTop10]),
 	storeTop10(Top10, Key1),
 	storeTop10(FilteredTop10, Key2),
 	io:format("Daily Top 10 updated ~n").
 
 %% Show results for last 7 days
 show_last_7(Pid, Bucket) ->
+	io:format("Updating Weekly Top 10... ~n"),
 	Key1 = <<"Top10_Week">>,
 	Key2 = <<"Filtered_Top10_Week">>,
 	Timestamp1 = timestamp_7_days_ago(),
@@ -83,12 +86,14 @@ show_last_7(Pid, Bucket) ->
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
 	io:format("Top10 Week: ~p~n", [Top10]),
+	io:format("Revised Top10 Week: ~p~n", [FilteredTop10]),
 	storeTop10(Top10, Key1),
 	storeTop10(FilteredTop10, Key2),
 	io:format("Weekly Top 10 updated ~n").
 
 %% Show results for last 30 days
 show_last_30(Pid, Bucket) ->
+	io:format("Updating Monthly Top 10... ~n"),
 	Key1 = <<"Top10_Month">>,
 	Key2 = <<"Filtered_Top10_Month">>,
 	Timestamp1 = timestamp_30_days_ago(),
@@ -102,6 +107,7 @@ show_last_30(Pid, Bucket) ->
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
 	io:format("Top10 Month: ~p~n", [Top10]),
+	io:format("Revised Top10 Month: ~p~n", [FilteredTop10]),
 	storeTop10(Top10, Key1),
 	storeTop10(FilteredTop10, Key2),
 	io:format("Monthly Top 10 updated ~n").
@@ -177,18 +183,24 @@ timestamp_30_days_ago() ->
 
 %% Retrieve something in time interval
 interval(Pid, Bucket, Timestamp1, Timestamp2) -> 
-	{_, {_, Range, _, _}} =	riakc_pb_socket:get_index_range(Pid, Bucket, 
-		{binary_index, "Timestamp"}, Timestamp1, Timestamp2), Range.
+	{_, {_, Range, _, _}} =	riakc_pb_socket:get_index_range(
+		Pid, 
+		Bucket, 
+		{binary_index, "timestamp"}, 
+		Timestamp1, Timestamp2), Range.
 
 %% Bucket + Key to use as Key in mapreduce
 interval_keys(Range, Bucket) ->
 	[{Bucket, Keys} || Keys <- Range].
 
-%% Add profanity words
+
 %% Fixa lista med otillåtna ord
 profanity_keys(Pid, Bucket) ->
-	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(Pid, Bucket, 
-		{binary_index, "Hashtag"}, <<"porn">>, <<"sex">>), ProfanityKeys.
+	{_, {_, ProfanityKeys, _, _}} = riakc_pb_socket:get_index(
+		Pid, 
+		Bucket, 
+		{binary_index, "hashtags"}, 
+		<<"Lust">>), ProfanityKeys.
 
 %% Filtered range without keys containing profanity tags
 filtered_keys(Range, Bucket, ProfanityKeys) ->
@@ -198,16 +210,12 @@ filtered_keys(Range, Bucket, ProfanityKeys) ->
 
 %% This performs exact match index query using binary
 %% Can change to integer_index
-match_query(Pid, Bucket, TimestampYMD) -> 
-	{_, {_, Match, _, _}} = riakc_pb_socket:get_index(Pid, Bucket,
-		{binary_index, "Timestamp"}, TimestampYMD), Match. 
-
-
-%% Fixing hashtag format
-%% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}, {[{<<"text">>,<<235,176,148,235,185,132>>},{<<"indices">>,"UX"}]}]
-%% [{[{<<"text">>,<<235,176,148,235,185,132>>},{<<"indices">>,"UX"}]}]
-fix_hashtag([]) -> [];
-fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].
+match_query(Pid, Bucket) -> 
+	{_, {_, Match, _, _}} = riakc_pb_socket:get_index(
+		Pid, 
+		Bucket,
+		{binary_index, "Hashtag"}, 
+		<<"MTVStars">>), Match. 
 
 
 %% Sorting in top10
@@ -252,9 +260,6 @@ loop() ->
     receive
     	{Pid, start} ->
     		go(),
-    		loop();
-    	{Pid, stop} -> 
-    		Pid ! {self(), stop, stopped},
     		loop();
     	{'EXIT', Pid, _} -> 
     		supervisor_loop ! {self(), restart_handler},
