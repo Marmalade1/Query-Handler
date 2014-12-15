@@ -42,11 +42,10 @@ go() ->
 	%supervisor_loop ! {self(), update, storing},
 	io:format("Updating...~n"),
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
-	Bucket = <<"Testing_New">>,
+	Bucket = <<"Alpha">>,
 	show_today(Pid, Bucket),
 	show_last_7(Pid, Bucket),
 	show_last_30(Pid, Bucket),
-	supervisor_loop ! {self(), stop},
 	io:format("All lists updated and stored! ~n").
 	
 
@@ -64,8 +63,10 @@ show_today(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
+	io:format("Top10 Today: ~p~n", [Top10]),
 	storeTop10(Top10, Key1),
-	storeTop10(FilteredTop10, Key2).
+	storeTop10(FilteredTop10, Key2),
+	io:format("Daily Top 10 updated ~n").
 
 %% Show results for last 7 days
 show_last_7(Pid, Bucket) ->
@@ -81,8 +82,10 @@ show_last_7(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
+	io:format("Top10 Week: ~p~n", [Top10]),
 	storeTop10(Top10, Key1),
-	storeTop10(FilteredTop10, Key2).
+	storeTop10(FilteredTop10, Key2),
+	io:format("Weekly Top 10 updated ~n").
 
 %% Show results for last 30 days
 show_last_30(Pid, Bucket) ->
@@ -98,8 +101,10 @@ show_last_30(Pid, Bucket) ->
 	FilteredResult = mapreduce(Pid, FilteredKeys),
 	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
+	io:format("Top10 Month: ~p~n", [Top10]),
 	storeTop10(Top10, Key1),
-	storeTop10(FilteredTop10, Key2).
+	storeTop10(FilteredTop10, Key2),
+	io:format("Monthly Top 10 updated ~n").
 
 %% Remove object from Bucket
 delete_object() -> 
@@ -199,17 +204,19 @@ match_query(Pid, Bucket, TimestampYMD) ->
 
 
 %% Fixing hashtag format
-%% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}]
+%% [{[{<<"text">>,<<"London">>},{<<"indices">>,[120,127]}]}, {[{<<"text">>,<<235,176,148,235,185,132>>},{<<"indices">>,"UX"}]}]
+%% [{[{<<"text">>,<<235,176,148,235,185,132>>},{<<"indices">>,"UX"}]}]
 fix_hashtag([]) -> [];
-fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].	
-	
+fix_hashtag([{[{_, Tag}, _]} | T]) -> [binary_to_list(Tag)|fix_hashtag(T)].
+
+
 %% Sorting in top10
 sortList(Result)->
 	Sort = lists:reverse(lists:keysort(2, Result)), 
 	Top10 = lists:sublist(Sort, 1, 10),
 	Top10.
 
-
+      
 %% Storing the results into a result bucket that can be
 %% retrieved from website.
 storeTop10(List, Key) -> storeTop10(List, Key, []).
