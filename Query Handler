@@ -1,5 +1,5 @@
 -module(handler).
--export([show_today/2, show_last_7/2, show_last_30/2, go/0, delete_object/0, fetch/1, interval/4, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/2, storeTop10/2, loop/0]).
+-export([show_today/2, show_today_revised/2, show_last_7/2, show_last_7_revised/2, show_last_30/2, show_last_30_revised/2, go/0, delete_object/0, fetch/0, interval/4, mapreduce/2, maptags/3, redtags/2,  timestamp/0, timestampYMD/0, match_query/2, storeTop10/2, loop/0]).
 
 
 %% ----------------------------------------------------------------------
@@ -39,78 +39,99 @@
 %% ----------------------------------------------------------------------
 
 go() -> 
-	%supervisor_loop ! {self(), update, storing},
-	io:format("Updating...~n"),
 	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087), 
 	Bucket = <<"Alpha">>,
-	%show_today(Pid, Bucket),
-	show_last_7(Pid, Bucket),
-	%show_last_30(Pid, Bucket),
-	io:format("All lists updated and stored! ~n").
+	spawn(handler, show_today, [Pid, Bucket]),
+	spawn(handler, show_last_7, [Pid, Bucket]),
+	spawn(handler, show_last_30, [Pid, Bucket]),
+	spawn(handler, show_today_revised, [Pid, Bucket]),
+	spawn(handler, show_last_7_revised, [Pid, Bucket]),
+	spawn(handler, show_last_30_revised, [Pid, Bucket]).
 	
 
 %% Show results for today
 show_today(Pid, Bucket) ->
-	io:format("Updating Daily Top 10... ~n"),
+	io:format("Updating todays Top 10 list... ~n"),
 	Key1 = <<"Top10_Today">>,
-	Key2 = <<"Filtered_Top10_Today">>,
 	Timestamp2 = timestampYMD(),
 	Timestamp1 = timestampYMD(),
 	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
+	Result = mapreduce(Pid, Keys),
+	Top10 = sortList(Result),
+	io:format("Top 10 Today: ~p~n", [Top10]),
+	storeTop10(Top10, Key1),
+	io:format("Daily Top 10 updated ~n").
+
+%% Show results for today revised list
+show_today_revised(Pid, Bucket) -> 
+	io:format("Updating todays Top 10 Revised list... ~n"),
+	Key1 = <<"Filtered_Top10_Today">>,
+	Timestamp2 = timestampYMD(),
+	Timestamp1 = timestampYMD(),
+	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
 	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
-	Result = mapreduce(Pid, Keys),
 	FilteredResult = mapreduce(Pid, FilteredKeys),
-	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	io:format("Top 10 Today: ~p~n", [Top10]),
-	io:format("Revised Top 10 Today: ~p~n", [FilteredTop10]),
-	storeTop10(Top10, Key1),
-	storeTop10(FilteredTop10, Key2),
-	io:format("Daily Top 10 updated ~n").
+	storeTop10(FilteredTop10, Key1),
+	io:format("Daily Top 10 Revised updated ~n").
 
 %% Show results for last 7 days
 show_last_7(Pid, Bucket) ->
-	io:format("Updating Weekly Top 10... ~n"),
+	io:format("Updating last 7 days Top 10 list... ~n"),
 	Key1 = <<"Top10_Week">>,
-	Key2 = <<"Filtered_Top10_Week">>,
 	Timestamp1 = timestamp_7_days_ago(),
 	Timestamp2 = timestampYMD(),
 	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
+	Result = mapreduce(Pid, Keys),
+	Top10 = sortList(Result),
+	io:format("Top10 last 7 days: ~p~n", [Top10]),
+	storeTop10(Top10, Key1),
+	io:format("Weekly Top 10 updated ~n").
+
+%% Show results for last 7 days revised list
+show_last_7_revised(Pid, Bucket) -> 
+	io:format("Updating last 7 days Top 10 revised list... ~n"),
+	Key1 = <<"Filtered_Top10_Week">>,
+	Timestamp1 = timestamp_7_days_ago(),
+	Timestamp2 = timestampYMD(),
+	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
 	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
-	Result = mapreduce(Pid, Keys),
 	FilteredResult = mapreduce(Pid, FilteredKeys),
-	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	io:format("Top10 Week: ~p~n", [Top10]),
-	io:format("Revised Top10 Week: ~p~n", [FilteredTop10]),
-	storeTop10(Top10, Key1),
-	storeTop10(FilteredTop10, Key2),
-	io:format("Weekly Top 10 updated ~n").
+	storeTop10(FilteredTop10, Key1),
+	io:format("Last 7 days Top 10 revised list updated ~n").
 
 %% Show results for last 30 days
 show_last_30(Pid, Bucket) ->
-	io:format("Updating Monthly Top 10... ~n"),
+	io:format("Updating last 30 days Top 10 list... ~n"),
 	Key1 = <<"Top10_Month">>,
-	Key2 = <<"Filtered_Top10_Month">>,
 	Timestamp1 = timestamp_30_days_ago(),
 	Timestamp2 = timestampYMD(),
 	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	Keys = interval_keys(Range, Bucket),
+	Result = mapreduce(Pid, Keys),
+	Top10 = sortList(Result),
+	io:format("Top10 last 30 days: ~p~n", [Top10]),
+	storeTop10(Top10, Key1),
+	io:format("Last 30 days Top 10 list updated ~n").
+
+%% Show results for last 30 days revised list
+show_last_30_revised(Pid, Bucket) ->
+	io:format("Updating last 30 days Top 10 revised list... ~n"),
+	Key1 = <<"Filtered_Top10_Week">>,
+	Timestamp1 = timestamp_30_days_ago(),
+	Timestamp2 = timestampYMD(),
+	Range = interval(Pid, Bucket, Timestamp1, Timestamp2),
 	ProfanityKeys = profanity_keys(Pid, Bucket),
 	FilteredKeys = filtered_keys(Range, Bucket, ProfanityKeys),
-	Result = mapreduce(Pid, Keys),
 	FilteredResult = mapreduce(Pid, FilteredKeys),
-	Top10 = sortList(Result),
 	FilteredTop10 = sortList(FilteredResult),
-	io:format("Top10 Month: ~p~n", [Top10]),
-	io:format("Revised Top10 Month: ~p~n", [FilteredTop10]),
-	storeTop10(Top10, Key1),
-	storeTop10(FilteredTop10, Key2),
-	io:format("Monthly Top 10 updated ~n").
+	storeTop10(FilteredTop10, Key1),
+	io:format("Last 30 days Top 10 revised list updated ~n").
 
 %% Remove object from Bucket
 delete_object() -> 
@@ -121,8 +142,9 @@ delete_object() ->
 	io:format("Key deleted, ").
 
 %% Fetch value from key
-fetch(Pid) -> 
-	ResBuckets = riakc_pb_socket:list_keys(Pid, <<"Result">>),
+fetch() -> 
+	{ok, Pid} = riakc_pb_socket:start_link("129.16.155.22", 8087),
+	ResBuckets = riakc_pb_socket:list_keys(Pid, <<"Alpha">>),
 	ResBuckets.
 	%{ok, Fetched} = riakc_pb_socket:get(Pid, Bucket, Key),
 	%Value = riakc_obj:get_value(Fetched),
@@ -223,8 +245,7 @@ sortList(Result)->
 	Sort = lists:reverse(lists:keysort(2, Result)), 
 	Top10 = lists:sublist(Sort, 1, 10),
 	Top10.
-
-      
+    
 %% Storing the results into a result bucket that can be
 %% retrieved from website.
 storeTop10(List, Key) -> storeTop10(List, Key, []).
@@ -261,8 +282,12 @@ loop() ->
     	{Pid, start} ->
     		go(),
     		loop();
+    	{Pid, kill_it} ->
+    		io:format("Killed~n"),
+    		loop();
     	{'EXIT', Pid, _} -> 
-    		supervisor_loop ! {self(), restart_handler},
+    		io:format("Killed~n"),
+    		main:start_link_handler(),
     		loop()
 
     end.
