@@ -282,11 +282,7 @@ loop() ->
     	{Pid, start} ->
     		go(),
     		loop();
-    	{Pid, kill_it} ->
-    		io:format("Killed~n"),
-    		loop();
     	{'EXIT', Pid, _} -> 
-    		io:format("Killed~n"),
     		main:start_link_handler(),
     		loop()
 
